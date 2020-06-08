@@ -1,5 +1,6 @@
 # AgileDB
 [![CocoaPods](https://img.shields.io/cocoapods/v/AgileDB.svg)](https://cocoapods.org/)
+![Build Status](https://circleci.com/gh/AaronBratcher/AgileDB.svg?style=shield&circle-token=:circle-token)
 
 Formerly known as ALBNoSQLDB
 
