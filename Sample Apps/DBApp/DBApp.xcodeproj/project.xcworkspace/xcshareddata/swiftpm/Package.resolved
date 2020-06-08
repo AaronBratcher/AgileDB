@@ -1,0 +1,16 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "AgileDB",
+        "repositoryURL": "https://github.com/AaronBratcher/AgileDB",
+        "state": {
+          "branch": null,
+          "revision": "a5add3c14a59e9d6d3afddbdff8ad7bc125f4b00",
+          "version": "6.0.0"
+        }
+      }
+    ]
+  },
+  "version": 1
+}
