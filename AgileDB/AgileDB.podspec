@@ -1,8 +1,8 @@
 Pod::Spec.new do |s|
-  s.name         = "ALBNoSQLDB"
+  s.name         = "AgileDB"
   s.version      = "6.0.0"
   s.summary      = "A thread safe SQLite database wrapper written in Swift 5"
-  s.homepage	 = "https://github.com/AaronBratcher/ALBNoSQLDB"
+  s.homepage	 = "https://github.com/AaronBratcher/AgileDB"
 
   s.license      = "MIT"
   s.author             = { "Aaron Bratcher" => "aaronlbratcher@yahoo.com" }
@@ -15,9 +15,9 @@ Pod::Spec.new do |s|
   s.osx.frameworks = 'AppKit', 'Foundation'
   s.ios.frameworks = 'UIKit', 'Foundation'
   
-  s.source				= { :git => "https://github.com/AaronBratcher/ALBNoSQLDB.git", :tag => s.version }
-  s.ios.source_files	= "ALBNoSQLDB", "ALBNoSQLDB/ALBNoSQLDB/**/*.{h,m,swift}"
-  s.osx.source_files	= "ALBNoSQLDB", "ALBNoSQLDB/ALBNoSQLDB/**/*.{h,m,swift}"
+  s.source				= { :git => "https://github.com/AaronBratcher/AgileDB.git", :tag => s.version }
+  s.ios.source_files	= "AgileDB", "AgileDB/AgileDB/**/*.{h,m,swift}"
+  s.osx.source_files	= "AgileDB", "AgileDB/AgileDB/**/*.{h,m,swift}"
   
   s.library				= "sqlite3"
 end
