@@ -78,7 +78,7 @@
 		89C898221D8FF9D100E3C870 = {
 			isa = PBXGroup;
 			children = (
-				89C8982E1D8FF9D100E3C870 /* AgildDB */,
+				89C8982E1D8FF9D100E3C870 /* AgileDB */,
 				89C898391D8FF9D100E3C870 /* AgileDBTests */,
 				89C8982D1D8FF9D100E3C870 /* Products */,
 				89C8984C1D8FFC3800E3C870 /* Frameworks */,
@@ -94,7 +94,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		89C8982E1D8FF9D100E3C870 /* AgildDB */ = {
+		89C8982E1D8FF9D100E3C870 /* AgileDB */ = {
 			isa = PBXGroup;
 			children = (
 				89C898461D8FFA4A00E3C870 /* AgileDB.swift */,
@@ -105,7 +105,7 @@
 				89E23C7C245B7622000F58CD /* DBResultsPublisher.swift */,
 				89C898301D8FF9D100E3C870 /* Info.plist */,
 			);
-			path = AgildDB;
+			path = AgileDB;
 			sourceTree = "<group>";
 		};
 		89C898391D8FF9D100E3C870 /* AgileDBTests */ = {
@@ -406,7 +406,7 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				INFOPLIST_FILE = AgildDB/Info.plist;
+				INFOPLIST_FILE = AgileDB/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
@@ -428,7 +428,7 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				INFOPLIST_FILE = AgildDB/Info.plist;
+				INFOPLIST_FILE = AgileDB/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
