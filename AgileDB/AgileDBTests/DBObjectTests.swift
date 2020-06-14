@@ -31,6 +31,39 @@ enum TransactionValue {
 	static let isNew = true
 }
 
+struct EncodingTransaction: DBObject {
+	static let table: DBTable = "EncodingTransaction"
+
+	var key = UUID().uuidString
+	var accountKey = "XK-12345"
+	var amount = 100
+	var amounts = [200,300,400]
+	var cost = 100.5
+	var costs = [200.1, 300.2, 400.3]
+	var users = ["user1","user2","user3"]
+	var isNew = true
+	var today = Date()
+	var dates = [Date(),Date(),Date()]
+	var location = Location()
+	var locations = [Location(), Location(), Location()]
+}
+
+struct Location: DBObject {
+	static let table: DBTable = "Locations"
+
+	var key = UUID().uuidString
+	var name = "Kroger"
+	var manager = Person()
+}
+
+struct Person: DBObject {
+	static let table: DBTable = "People"
+
+	var key = UUID().uuidString
+	var firstName = "Store"
+	var lastName = "Manaager"
+}
+
 class DBObjectTests: XCTestCase {
 	lazy var db: AgileDB = {
 		return dbForTestClass(className: String(describing: type(of: self)))
@@ -97,5 +130,15 @@ class DBObjectTests: XCTestCase {
 		}
 
 		waitForExpectations(timeout: 2, handler: nil)
+	}
+
+	func testNestedSave() throws {
+		let transaction = EncodingTransaction()
+		transaction.save(to: db)
+
+		let loadedTransaction = try XCTUnwrap(EncodingTransaction(db: db, key: transaction.key))
+		XCTAssertEqual(transaction.amount, loadedTransaction.amount)
+		XCTAssertEqual(loadedTransaction.locations.count, 3)
+		XCTAssertEqual(loadedTransaction.locations[0].manager.firstName, "Store")
 	}
 }

@@ -1,0 +1,29 @@
+{
+  "configurations" : [
+    {
+      "id" : "F453CED7-4715-4C90-AF6F-9B373FC27D0B",
+      "name" : "Configuration 1",
+      "options" : {
+        "testExecutionOrdering" : "random"
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:AgileDB.xcodeproj",
+      "identifier" : "89C8982B1D8FF9D100E3C870",
+      "name" : "AgileDB"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:AgileDB.xcodeproj",
+        "identifier" : "89C898341D8FF9D100E3C870",
+        "name" : "AgileDBTests"
+      }
+    }
+  ],
+  "version" : 1
+}

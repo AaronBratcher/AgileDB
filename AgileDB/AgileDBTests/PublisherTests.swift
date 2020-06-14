@@ -51,7 +51,6 @@ class PublisherTests: XCTestCase {
 		DispatchQueue.main.asyncAfter(wallDeadline: .now() + 1) {
 			let transaction = Transaction(key: "K10", date: Date(), accountKey: "A1", amount: 100, isNew: true)
 			transaction.save(to: self.db)
-
 		}
 
 		waitForExpectations(timeout: 120, handler: nil)

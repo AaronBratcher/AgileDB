@@ -1,5 +1,5 @@
 //
-// ALBNoSQLswift
+// AgileDB.swift
 //
 // Created by Aaron Bratcher on 01/08/2015.
 // Copyright (c) 2015 – 2020 Aaron L Bratcher. All rights reserved.
@@ -36,7 +36,7 @@ public final class AgileDB {
 	*/
 	public var isDebugging = false {
 		didSet {
-			_SQLiteCore.isDebugging = isDebugging
+			dbCore.isDebugging = isDebugging
 		}
 	}
 
@@ -44,6 +44,11 @@ public final class AgileDB {
 	The number of seconds to wait after inactivity before automatically closing the file. File is automatically opened for next activity. A value of 0 means never close automatically
 	*/
 	public var autoCloseTimeout = 0
+
+	/**
+	Read-only array of unsynced tables.  Any tables not in this array will be synced.
+	*/
+	private(set) public var unsyncedTables: [String] = []
 
 	public static var dateFormatter: DateFormatter = {
 		let dateFormatter = DateFormatter()
@@ -56,7 +61,7 @@ public final class AgileDB {
 	// MARK: - Private properties
 	private struct DBTables {
 		private var tables: [DBTable] = []
-		static let tableQueue = DispatchQueue(label: "com.AaronLBratcher.ALBNoSQLTableQueue", attributes: [])
+		static let tableQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBTableQueue", attributes: [])
 
 		func allTables() -> [DBTable] {
 			return tables
@@ -91,18 +96,17 @@ public final class AgileDB {
 		}
 	}
 
-	private let _SQLiteCore = SQLiteCore()
-	private var _lock = DispatchSemaphore(value: 0)
-	private var _dbFileLocation: URL?
-	private var _instanceKey = ""
-	private var _tables = DBTables()
-	private var _indexes = [String: [String]]()
-	private let _dbQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBQueue", qos: .userInitiated)
-	private let _publisherQueue = DispatchQueue(label: "com.AaronLBratcher.ALBNoSQLPublisherQueue", qos: .userInitiated)
-	private var _syncingEnabled = false
-	private var _unsyncedTables = [String]()
-	private var _publishers = [UpdatablePublisher]()
-	private lazy var _autoDeleteTimer: RepeatingTimer = {
+	private let dbCore = SQLiteCore()
+	private var lock = DispatchSemaphore(value: 0)
+	private var dbFileLocation: URL?
+	private var dbInstanceKey = ""
+	private var tables = DBTables()
+	private var indexes = [String: [String]]()
+	private let dbQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBQueue", qos: .userInitiated)
+	private let publisherQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBPublisherQueue", qos: .userInitiated)
+	private var syncingEnabled = false
+	private var publishers = [UpdatablePublisher]()
+	private lazy var autoDeleteTimer: RepeatingTimer = {
 		return RepeatingTimer(timeInterval: 60) {
 			self.autoDelete()
 		}
@@ -115,8 +119,8 @@ public final class AgileDB {
 	- parameter location: Optional file location if different than the default.
 	*/
 	public init(fileLocation: URL? = nil) {
-		_dbFileLocation = fileLocation
-		_SQLiteCore.start()
+		dbFileLocation = fileLocation
+		dbCore.start()
 	}
 
 	// MARK: - Open / Close
@@ -128,14 +132,14 @@ public final class AgileDB {
 	- returns: Bool Returns if the database could be successfully opened.
 	*/
 	public func open(_ location: URL? = nil) -> Bool {
-		let dbFileLocation = location ?? _dbFileLocation ?? URL(fileURLWithPath: defaultFileLocation())
+		let dbFileLocation = location ?? self.dbFileLocation ?? URL(fileURLWithPath: defaultFileLocation())
 		// if we already have a db file open at a different location, close it first
-		if _SQLiteCore.isOpen && _dbFileLocation != dbFileLocation {
+		if dbCore.isOpen && dbFileLocation != dbFileLocation {
 			close()
 		}
 
 		if let location = location {
-			_dbFileLocation = location
+			self.dbFileLocation = location
 		}
 
 		let openResults = openDB()
@@ -150,9 +154,9 @@ public final class AgileDB {
 	Close the database.
 	*/
 	public func close() {
-		_autoDeleteTimer.suspend()
-		_dbQueue.sync { () -> Void in
-			_SQLiteCore.close()
+		autoDeleteTimer.suspend()
+		dbQueue.sync { () -> Void in
+			dbCore.close()
 		}
 	}
 
@@ -172,7 +176,7 @@ public final class AgileDB {
 			return nil
 		}
 
-		if !_tables.hasTable(table) {
+		if !tables.hasTable(table) {
 			return false
 		}
 
@@ -202,7 +206,7 @@ public final class AgileDB {
 			return nil
 		}
 
-		if !_tables.hasTable(table) {
+		if !tables.hasTable(table) {
 			let dispatchQueue = queue ?? DispatchQueue.main
 			dispatchQueue.async {
 				completion(Result<Bool, DBError>.success(false))
@@ -211,7 +215,7 @@ public final class AgileDB {
 		}
 
 		let sql = "select 1 from \(table) where key = '\(key)'"
-		let blockReference = _SQLiteCore.sqlSelect(sql, completion: { (rowResults) -> Void in
+		let blockReference = dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
 			let dispatchQueue = queue ?? DispatchQueue.main
 			dispatchQueue.async {
 				let results: BoolResults
@@ -237,7 +241,7 @@ public final class AgileDB {
 	Unsorted Example:
 	
 	let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
-	if let keys = ALBNoSQLkeysInTable("table1", sortOrder:nil, conditions:accountCondition) {
+	if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
 		// use keys
 	} else {
 		// handle error
@@ -256,7 +260,7 @@ public final class AgileDB {
 			return nil
 		}
 
-		if !_tables.hasTable(table) {
+		if !tables.hasTable(table) {
 			return []
 		}
 
@@ -277,7 +281,7 @@ public final class AgileDB {
 	Unsorted Example:
 	
 	let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
-	if let keys = ALBNoSQLkeysInTable("table1", sortOrder:nil, conditions:accountCondition) {
+	if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
 		// use keys
 	} else {
 		// handle error
@@ -300,14 +304,14 @@ public final class AgileDB {
 			return nil
 		}
 
-		if !_tables.hasTable(table) {
+		if !tables.hasTable(table) {
 			completion(.failure(.tableNotFound))
 			return DBCommandToken(database: self, identifier: 0)
 		}
 
 		guard let sql = keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else { return nil }
 
-		let blockReference = _SQLiteCore.sqlSelect(sql, completion: { (rowResults) -> Void in
+		let blockReference = dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
 			let dispatchQueue = queue ?? DispatchQueue.main
 			dispatchQueue.async {
 				let results: KeyResults
@@ -340,8 +344,8 @@ public final class AgileDB {
 	@discardableResult
 	public func publisher<T>(sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> DBResultsPublisher<T> {
 		let publisher = DBResultsPublisher<T>(db: self, table: T.table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
-		_dbQueue.sync {
-			_publishers.append(publisher)
+		dbQueue.sync {
+			publishers.append(publisher)
 		}
 
 		return publisher
@@ -353,7 +357,7 @@ public final class AgileDB {
 	
 	Example:
 	
-	ALBNoSQLsetTableIndexes(table: kTransactionsTable, indexes: ["accountKey","date"]) // index accountKey and date each individually
+	AgileDB.setIndexesForTable(kTransactionsTable, to: ["accountKey","date"]) // index accountKey and date each individually
 	
 	- parameter table: The table to return keys from.
 	- parameter indexes: An array of table properties to be indexed. An array entry can be compound.
@@ -362,7 +366,7 @@ public final class AgileDB {
 	public func setIndexesForTable(_ table: DBTable, to indexes: [String]) -> BoolResults {
 		let openResults = openDB()
 		if case .success(_) = openResults {
-			_indexes[table.name] = indexes
+			self.indexes[table.name] = indexes
 			// TODO: Return results from call
 			createIndexesForTable(table)
 		}
@@ -376,13 +380,13 @@ public final class AgileDB {
 	
 	Example:
 	
-	if !ALBNoSQLsetValue(table: "table5", key: "testKey1", value: "{\"numValue\":1,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil) {
+	if !AgileDB.setValueInTable("table5", for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil) {
 		// handle error
 	}
 	
 	- parameter table: The table to return keys from.
 	- parameter key: The key for the entry.
-	- parameter value: A JSON string representing the value to be stored. Top level object provided must be a dictionary. If a key object is in the value, it will be ignored.
+	- parameter value: A JSON string representing the value to be stored. Top level object provided must be a dictionary. If a key node is in the value, it will be ignored.
 	- parameter autoDeleteAfter: Optional date of when the value should be automatically deleted from the table.
 	
 	- returns: Bool If the value was set successfully.
@@ -392,14 +396,36 @@ public final class AgileDB {
 		assert(key != "", "key must be provided")
 		assert(value != "", "value must be provided")
 
-		let dataValue = value.data(using: .utf8)
-		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue!, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+		guard let dataValue = value.data(using: .utf8) else { return false }
+
+		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
 		assert(objectValues != nil, "Value must be valid JSON string that is a dictionary for the top-level object")
 
+		return setValueInTable(table, for: key, to: objectValues!, autoDeleteAfter: autoDeleteAfter)
+	}
+
+	/**
+	Sets the value of an entry in the given table for a given key optionally deleted automatically after a given date. Supported values are dictionaries with string keys and values that consist of String, Int, Double, Bool and arrays of String, Int, and Double. If more complex objects need to be stored, a string value of those objects need to be stored.
+
+	Example:
+
+	if !AgileDB.setValueInTable("table5", for: "testKey1", to: dictValue, autoDeleteAfter: nil) {
+		// handle error
+	}
+
+	- parameter table: The table to return keys from.
+	- parameter key: The key for the entry.
+	- parameter value: A dictionary object representing the value to be stored. If a key named "key" exists, it will be ignored.
+	- parameter autoDeleteAfter: Optional date of when the value should be automatically deleted from the table.
+
+	- returns: Bool If the value was set successfully.
+	*/
+	@discardableResult
+	public func setValueInTable(_ table: DBTable, for key: String, to objectValues: [String: AnyObject], autoDeleteAfter: Date? = nil) -> Bool {
 		let now = AgileDB.stringValueForDate(Date())
 		let deleteDateTime = (autoDeleteAfter == nil ? "NULL" : "'" + AgileDB.stringValueForDate(autoDeleteAfter!) + "'")
 
-		let successful = setValue(table: table, key: key, objectValues: objectValues!, addedDateTime: now, updatedDateTime: now, deleteDateTime: deleteDateTime, sourceDB: _instanceKey, originalDB: _instanceKey)
+		let successful = setValue(table: table, key: key, objectValues: objectValues, addedDateTime: now, updatedDateTime: now, deleteDateTime: deleteDateTime, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
 
 		if successful {
 			updatePublisherResults(for: key, in: table)
@@ -413,7 +439,7 @@ public final class AgileDB {
 	Returns the JSON value of what was stored for a given table and key.
 	
 	Example:
-	if let jsonValue = ALBNoSQLvalueForKey(table: "table1", key: "58D200A048F9") {
+	if let jsonValue = AgileDB.valueFromTable("table1", for: "58D200A048F9") {
 		// process JSON text
 	} else {
 		// handle error
@@ -450,13 +476,13 @@ public final class AgileDB {
 	@discardableResult
 	public func valueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (JsonResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
-		if case .failure(_) = openResults, !_tables.hasTable(table) {
+		if case .failure(_) = openResults, !tables.hasTable(table) {
 			return nil
 		}
 
 		let (sql, columns) = dictValueForKeySQL(table: table, key: key, includeDates: false)
 
-		let blockReference = _SQLiteCore.sqlSelect(sql, completion: { [weak self] (rowResults) -> Void in
+		let blockReference = dbCore.sqlSelect(sql, completion: { [weak self] (rowResults) -> Void in
 			guard let self = self else { return }
 
 			let dispatchQueue = queue ?? DispatchQueue.main
@@ -491,7 +517,7 @@ public final class AgileDB {
 	Returns the dictionary value of what was stored for a given table and key.
 	
 	Example:
-	if let dictValue = ALBNoSQLdictValueForKey(table: "table1", key: "58D200A048F9") {
+	if let dictValue = AgileDB.dictValueForKey(table: "table1", key: "58D200A048F9") {
 		// process dictionary
 	} else {
 		// handle error
@@ -510,7 +536,7 @@ public final class AgileDB {
 	Returns the dictionary value of what was stored for a given table and key.
 	
 	Example:
-	if let dictValue = ALBNoSQLdictValueForKey(table: "table1", key: "58D200A048F9") {
+	if let dictValue = AgileDB.dictValueForKey(table: "table1", key: "58D200A048F9") {
 		// process dictionary
 	} else {
 		// handle error
@@ -526,13 +552,13 @@ public final class AgileDB {
 	@discardableResult
 	public func dictValueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (DictResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
-		if case .failure(_) = openResults, !_tables.hasTable(table) {
+		if case .failure(_) = openResults, !tables.hasTable(table) {
 			return nil
 		}
 
 		let (sql, columns) = dictValueForKeySQL(table: table, key: key, includeDates: false)
 
-		let blockReference = _SQLiteCore.sqlSelect(sql, completion: { [weak self] (rowResults) -> Void in
+		let blockReference = dbCore.sqlSelect(sql, completion: { [weak self] (rowResults) -> Void in
 			guard let self = self else { return }
 
 			let dispatchQueue = queue ?? DispatchQueue.main
@@ -575,10 +601,10 @@ public final class AgileDB {
 		assert(key != "", "key must be provided")
 		var deleted = false
 
-		_publisherQueue.sync {
+		publisherQueue.sync {
 			let publishers = publishersContaining(key: key, in: table)
 
-			deleted = deleteForKey(table: table, key: key, autoDelete: false, sourceDB: _instanceKey, originalDB: _instanceKey)
+			deleted = deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
 			if deleted {
 				for publisher in publishers {
 					publisher.updateSubject()
@@ -609,11 +635,11 @@ public final class AgileDB {
 			return false
 		}
 
-		_tables.dropTable(table)
+		tables.dropTable(table)
 
-		if _syncingEnabled && _unsyncedTables.doesNotContain(table.name) {
+		if syncingEnabled && unsyncedTables.doesNotContain(table.name) {
 			let now = AgileDB.stringValueForDate(Date())
-			if !sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(_instanceKey)','\(_instanceKey)','\(table)','X',NULL)") {
+			if !sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(dbInstanceKey)','\(dbInstanceKey)','\(table)','X',NULL)") {
 				return false
 			}
 
@@ -642,15 +668,15 @@ public final class AgileDB {
 		}
 
 		var successful = true
-		let tables = _tables.allTables()
-		for table in tables {
+		let dbTables = tables.allTables()
+		for table in dbTables {
 			successful = dropTable(table)
 			if !successful {
 				return false
 			}
 		}
 
-		_tables.dropAllTables()
+		tables.dropAllTables()
 
 		return true
 	}
@@ -665,7 +691,7 @@ public final class AgileDB {
 			return nil
 		}
 
-		return _syncingEnabled
+		return syncingEnabled
 	}
 
 	/**
@@ -679,7 +705,7 @@ public final class AgileDB {
 			return false
 		}
 
-		if _syncingEnabled {
+		if syncingEnabled {
 			return true
 		}
 
@@ -691,14 +717,14 @@ public final class AgileDB {
 		sqlExecute("create table __unsyncedTables(tableName text)")
 
 		let now = AgileDB.stringValueForDate(Date())
-		let tables = _tables.allTables()
-		for table in tables {
-			if !sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) select '\(now)','\(_instanceKey)','\(_instanceKey)','\(table.name)','U',key from \(table.name)") {
+		let dbTables = tables.allTables()
+		for table in dbTables {
+			if !sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) select '\(now)','\(dbInstanceKey)','\(dbInstanceKey)','\(table.name)','U',key from \(table.name)") {
 				return false
 			}
 		}
 
-		_syncingEnabled = true
+		syncingEnabled = true
 		return true
 	}
 
@@ -713,7 +739,7 @@ public final class AgileDB {
 			return false
 		}
 
-		if !_syncingEnabled {
+		if !syncingEnabled {
 			return true
 		}
 
@@ -721,16 +747,9 @@ public final class AgileDB {
 			return false
 		}
 
-		_syncingEnabled = false
+		syncingEnabled = false
 
 		return true
-	}
-
-	/**
-	Read-only array of unsynced tables.  Any tables not in this array will be synced.
-	*/
-	var unsyncedTables: [String] {
-		return _unsyncedTables
 	}
 
 	/**
@@ -746,15 +765,15 @@ public final class AgileDB {
 			return false
 		}
 
-		if !_syncingEnabled {
+		if !syncingEnabled {
 			print("syncing must be enabled before setting unsynced tables")
 			return false
 		}
 
-		_unsyncedTables = [String]()
+		unsyncedTables = [String]()
 		for tableName in tables {
 			sqlExecute("delete from __synclog where tableName = '\(tableName)'")
-			_unsyncedTables.append(tableName)
+			unsyncedTables.append(tableName)
 		}
 
 		return true
@@ -775,7 +794,7 @@ public final class AgileDB {
 			return (false, lastSequence)
 		}
 
-		if !_syncingEnabled {
+		if !syncingEnabled {
 			print("syncing must be enabled before creating sync file")
 			return (false, lastSequence)
 		}
@@ -795,7 +814,7 @@ public final class AgileDB {
 		if let fileHandle = FileHandle(forWritingAtPath: filePath) {
 			if let results = sqlSelect("select rowid,timestamp,originalDB,tableName,activity,key from __synclog where rowid > \(lastSequence) and sourceDB <> '\(targetDBInstanceKey)' and originalDB <> '\(targetDBInstanceKey)' order by rowid") {
 				var lastRowID = lastSequence
-				fileHandle.write("{\"sourceDB\":\"\(_instanceKey)\",\"logEntries\":[\n".dataValue())
+				fileHandle.write("{\"sourceDB\":\"\(dbInstanceKey)\",\"logEntries\":[\n".dataValue())
 				var firstEntry = true
 				for row in results {
 					lastRowID = row.values[0] as! Int
@@ -807,7 +826,7 @@ public final class AgileDB {
 
 					var entryDict = [String: AnyObject]()
 					entryDict["timeStamp"] = timeStamp as AnyObject
-					if originalDB != _instanceKey {
+					if originalDB != dbInstanceKey {
 						entryDict["originalDB"] = originalDB as AnyObject
 					}
 					entryDict["tableName"] = tableName as AnyObject
@@ -847,7 +866,7 @@ public final class AgileDB {
 
 
 	/**
-	Processes a sync file created by another instance of ALBNoSQL This is a synchronous call.
+	Processes a sync file created by another instance of AgileDB. This is a synchronous call.
 	
 	- parameter filePath: The path to the sync file.
 	- parameter syncProgress: Optional function that will be called periodically giving the percent complete.
@@ -861,7 +880,7 @@ public final class AgileDB {
 			return (false, "", 0)
 		}
 
-		if !_syncingEnabled {
+		if !syncingEnabled {
 			print("syncing must be enabled before processing sync file")
 			return (false, "", 0)
 		}
@@ -924,8 +943,8 @@ public final class AgileDB {
 						}
 					}
 
-					_publisherQueue.sync {
-						for publisher in _publishers {
+					publisherQueue.sync {
+						for publisher in publishers {
 							publisher.updateSubject()
 						}
 					}
@@ -949,7 +968,7 @@ public final class AgileDB {
 	public var instanceKey: String? {
 		let openResults = openDB()
 		if case .success(_) = openResults {
-			return _instanceKey
+			return dbInstanceKey
 		}
 
 		return nil
@@ -988,17 +1007,17 @@ public final class AgileDB {
 
 	// MARK: - Internal Initialization Methods
 	private func openDB() -> BoolResults {
-		if _SQLiteCore.isOpen {
+		if dbCore.isOpen {
 			return BoolResults.success(true)
 		}
 
 		let dbFilePath: String
 
-		if let _dbFileLocation = self._dbFileLocation {
+		if let _dbFileLocation = self.dbFileLocation {
 			dbFilePath = _dbFileLocation.path
 		} else {
 			dbFilePath = defaultFileLocation()
-			_dbFileLocation = URL(fileURLWithPath: dbFilePath)
+			dbFileLocation = URL(fileURLWithPath: dbFilePath)
 		}
 
 		var fileExists = false
@@ -1006,17 +1025,17 @@ public final class AgileDB {
 		var openResults: BoolResults = .success(true)
 		var previouslyOpened = false
 
-		_dbQueue.sync { [weak self]() -> Void in
+		dbQueue.sync { [weak self]() -> Void in
 			guard let self = self else { return }
 
-			self._SQLiteCore.openDBFile(dbFilePath, autoCloseTimeout: self.autoCloseTimeout) { (results, alreadyOpen, alreadyExists) -> Void in
+			self.dbCore.openDBFile(dbFilePath, autoCloseTimeout: self.autoCloseTimeout) { (results, alreadyOpen, alreadyExists) -> Void in
 				openResults = results
 				previouslyOpened = alreadyOpen
 				fileExists = alreadyExists
 
-				self._lock.signal()
+				self.lock.signal()
 			}
-			self._lock.wait()
+			self.lock.wait()
 		}
 
 		if case .success(_) = openResults, !previouslyOpened {
@@ -1030,7 +1049,7 @@ public final class AgileDB {
 			}
 
 			checkSchema()
-			_autoDeleteTimer.resume()
+			autoDeleteTimer.resume()
 		}
 
 		return openResults
@@ -1050,37 +1069,37 @@ public final class AgileDB {
 	}
 
 	private func checkSchema() {
-		_tables.dropAllTables()
+		tables.dropAllTables()
 		let tableList = sqlSelect("SELECT name FROM sqlite_master WHERE type = 'table'")
 		if let tableList = tableList {
 			for tableRow in tableList {
 				let table = tableRow.values[0] as! String
 				if !AgileDB.reservedTable(table) && !table.hasSuffix("_arrayValues") {
-					_tables.addTable(DBTable(name: table))
+					tables.addTable(DBTable(name: table))
 				}
 
 				if table == "__synclog" {
-					_syncingEnabled = true
+					syncingEnabled = true
 				}
 			}
 		}
 
-		if _syncingEnabled {
-			_unsyncedTables = [String]()
+		if syncingEnabled {
+			unsyncedTables = [String]()
 			let unsyncedTables = sqlSelect("select tableName from __unsyncedTables")
 			if let unsyncedTables = unsyncedTables {
-				_unsyncedTables = unsyncedTables.map({ $0.values[0] as! String })
+				self.unsyncedTables = unsyncedTables.map({ $0.values[0] as! String })
 			}
 		}
 
 		if let keyResults = sqlSelect("select value from __settings where key = 'dbInstanceKey'") {
 			if keyResults.isEmpty {
-				_instanceKey = UUID().uuidString
-				let parts = _instanceKey.components(separatedBy: "-")
-				_instanceKey = parts[parts.count - 1]
-				sqlExecute("insert into __settings(key,value) values('dbInstanceKey','\(_instanceKey)')")
+				dbInstanceKey = UUID().uuidString
+				let parts = dbInstanceKey.components(separatedBy: "-")
+				dbInstanceKey = parts[parts.count - 1]
+				sqlExecute("insert into __settings(key,value) values('dbInstanceKey','\(dbInstanceKey)')")
 			} else {
-				_instanceKey = keyResults[0].values[0] as! String
+				dbInstanceKey = keyResults[0].values[0] as! String
 			}
 		}
 
@@ -1099,13 +1118,13 @@ public final class AgileDB {
 // MARK: - Internal Publisher Updates
 extension AgileDB {
 	func removePublisher(_ publisher: UpdatablePublisher) {
-		_publisherQueue.sync {
-			_publishers = _publishers.filter({ $0.id != publisher.id })
+		publisherQueue.sync {
+			publishers = publishers.filter({ $0.id != publisher.id })
 		}
 	}
 
 	fileprivate func updatePublisherResults(for key: String, in table: DBTable) {
-		_publisherQueue.sync {
+		publisherQueue.sync {
 			for publisher in publishersContaining(key: key, in: table) {
 				publisher.updateSubject()
 			}
@@ -1113,28 +1132,28 @@ extension AgileDB {
 	}
 
 	fileprivate func clearPublisherResults(in table: DBTable) {
-		_publisherQueue.sync {
-			for publisher in _publishers {
+		publisherQueue.sync {
+			for publisher in publishers {
 				publisher.clearResults(in: table)
 			}
 		}
 	}
 
 	fileprivate func publishersContaining(key: String, in table: DBTable) -> [UpdatablePublisher] {
-		var publishers = [UpdatablePublisher]()
+		var matchingPublishers = [UpdatablePublisher]()
 
-		for publisher in _publishers where publisher.table == table {
+		for publisher in publishers where publisher.table == table {
 			guard let sql = keysInTableSQL(table: table, sortOrder: nil, conditions: publisher.conditions, validateObjecs: publisher.validateObjects, testKey: key)
 				, let results = sqlSelect(sql)
 				else { continue }
 
 			let keys = results.map({ $0.values[0] as! String })
 			if keys.count > 0 {
-				publishers.append(publisher)
+				matchingPublishers.append(publisher)
 			}
 		}
 
-		return publishers
+		return matchingPublishers
 	}
 }
 
@@ -1382,7 +1401,7 @@ extension AgileDB {
 			}
 		}
 
-		if _syncingEnabled && _unsyncedTables.doesNotContain(table.name) {
+		if syncingEnabled && unsyncedTables.doesNotContain(table.name) {
 			let now = AgileDB.stringValueForDate(Date())
 			sql = "insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(table)','U','\(esc(key))')"
 
@@ -1403,14 +1422,14 @@ extension AgileDB {
 	private func setTableValues(objectValues: [String: AnyObject], sql: String) -> Bool {
 		var successful = false
 
-		_dbQueue.sync { [weak self]() -> Void in
+		dbQueue.sync { [weak self]() -> Void in
 			guard let self = self else { return }
 
-			self._SQLiteCore.setTableValues(objectValues: objectValues, sql: sql, completion: { (success) -> Void in
+			self.dbCore.setTableValues(objectValues: objectValues, sql: sql, completion: { (success) -> Void in
 				successful = success
-				self._lock.signal()
+				self.lock.signal()
 			})
-			self._lock.wait()
+			self.lock.wait()
 		}
 
 		return successful
@@ -1448,7 +1467,7 @@ extension AgileDB {
 			return false
 		}
 
-		if !_tables.hasTable(table) {
+		if !tables.hasTable(table) {
 			return false
 		}
 
@@ -1457,7 +1476,7 @@ extension AgileDB {
 		}
 
 		let now = AgileDB.stringValueForDate(Date())
-		if _syncingEnabled && _unsyncedTables.doesNotContain(table.name) {
+		if syncingEnabled && unsyncedTables.doesNotContain(table.name) {
 			var sql = ""
 			// auto-deleted entries will be automatically removed from any other databases too. Don't need to log this deletion.
 			if !autoDelete {
@@ -1483,14 +1502,14 @@ extension AgileDB {
 		}
 
 		let now = AgileDB.stringValueForDate(Date())
-		let tables = _tables.allTables()
-		for table in tables {
+		let dbTables = tables.allTables()
+		for table in dbTables {
 			if !AgileDB.reservedTable(table.name) {
 				let sql = "select key from \(table) where autoDeleteDateTime < '\(now)'"
 				if let results = sqlSelect(sql) {
 					for row in results {
 						let key = row.values[0] as! String
-						_ = deleteForKey(table: table, key: key, autoDelete: true, sourceDB: _instanceKey, originalDB: _instanceKey)
+						_ = deleteForKey(table: table, key: key, autoDelete: true, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
 					}
 				}
 			}
@@ -1500,7 +1519,7 @@ extension AgileDB {
 	private func dictValueFromTable(_ table: DBTable, for key: String, includeDates: Bool) -> [String: AnyObject]? {
 		assert(key != "", "key value must be provided")
 		let openResults = openDB()
-		if case .failure(_) = openResults, !_tables.hasTable(table) {
+		if case .failure(_) = openResults, !tables.hasTable(table) {
 			return nil
 		}
 
@@ -1624,7 +1643,7 @@ extension AgileDB {
 	}
 
 	private func createTable(_ table: DBTable) -> Bool {
-		if _tables.hasTable(table) {
+		if tables.hasTable(table) {
 			return true
 		}
 
@@ -1636,17 +1655,17 @@ extension AgileDB {
 			return false
 		}
 
-		_tables.addTable(table)
+		tables.addTable(table)
 
 		return true
 	}
 
 	private func createIndexesForTable(_ table: DBTable) {
-		if !_tables.hasTable(table) {
+		if !tables.hasTable(table) {
 			return
 		}
 
-		if let indexes = _indexes[table.name] {
+		if let indexes = indexes[table.name] {
 			for index in indexes {
 				var indexName = index.replacingOccurrences(of: ",", with: "_")
 				indexName = "idx_\(table)_\(indexName)"
@@ -1728,14 +1747,14 @@ extension AgileDB {
 	private func sqlExecute(_ sql: String) -> Bool {
 		var successful = false
 
-		_dbQueue.sync { [weak self]() -> Void in
+		dbQueue.sync { [weak self]() -> Void in
 			guard let self = self else { return }
 
-			_ = self._SQLiteCore.sqlExecute(sql, completion: { (success) in
+			_ = self.dbCore.sqlExecute(sql, completion: { (success) in
 				successful = success
-				self._lock.signal()
+				self.lock.signal()
 			})
-			self._lock.wait()
+			self.lock.wait()
 		}
 
 		return successful
@@ -1744,14 +1763,14 @@ extension AgileDB {
 	private func lastInsertID() -> sqlite3_int64 {
 		var lastID: sqlite3_int64 = 0
 
-		_dbQueue.sync(execute: { [weak self]() -> Void in
+		dbQueue.sync(execute: { [weak self]() -> Void in
 			guard let self = self else { return }
 
-			self._SQLiteCore.lastID({ (lastInsertionID) -> Void in
+			self.dbCore.lastID({ (lastInsertionID) -> Void in
 				lastID = lastInsertionID
-				self._lock.signal()
+				self.lock.signal()
 			})
-			self._lock.wait()
+			self.lock.wait()
 		})
 
 		return lastID
@@ -1765,14 +1784,14 @@ extension AgileDB {
 			return nil
 		}
 
-		_dbQueue.sync { [weak self]() -> Void in
+		dbQueue.sync { [weak self]() -> Void in
 			guard let self = self else { return }
 
-			_ = self._SQLiteCore.sqlSelect(sql, completion: { (rowResults) -> Void in
+			_ = self.dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
 				results = rowResults
-				self._lock.signal()
+				self.lock.signal()
 			})
-			self._lock.wait()
+			self.lock.wait()
 		}
 
 		switch results {
@@ -1790,7 +1809,7 @@ extension AgileDB {
 			return nil
 		}
 
-		let blockReference: UInt = self._SQLiteCore.sqlSelect(sql, completion: { (rowResults) -> Void in
+		let blockReference: UInt = self.dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
 			let dispatchQueue = queue ?? DispatchQueue.main
 			dispatchQueue.async {
 				let results: RowResults
@@ -1813,14 +1832,14 @@ extension AgileDB {
 	func dequeueCommand(_ commandReference: UInt) -> Bool {
 		var removed = true
 
-		_dbQueue.sync { [weak self]() -> Void in
+		dbQueue.sync { [weak self]() -> Void in
 			guard let self = self else { return }
 
-			self._SQLiteCore.removeExecutionBlock(commandReference, completion: { (results) -> Void in
+			self.dbCore.removeExecutionBlock(commandReference, completion: { (results) -> Void in
 				removed = results
-				self._lock.signal()
+				self.lock.signal()
 			})
-			self._lock.wait()
+			self.lock.wait()
 		}
 
 		return removed
@@ -1838,16 +1857,16 @@ private extension AgileDB {
 			var blockReference: UInt
 		}
 
-		private var _sqliteDB: OpaquePointer?
-		private var _threadLock = DispatchSemaphore(value: 0)
-		private var _queuedBlocks = [ExecutionBlock]()
-		private var _autoCloseTimer: RepeatingTimer?
-		private var _dbFilePath = ""
-		private var _autoCloseTimeout: TimeInterval = 0
-		private var _lastActivity: Double = 0
-		private var _automaticallyClosed = false
-		private let _blockQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBBlockQueue", attributes: [])
-		private var _blockReference: UInt = 1
+		private var sqliteDB: OpaquePointer?
+		private var threadLock = DispatchSemaphore(value: 0)
+		private var queuedBlocks = [ExecutionBlock]()
+		private var autoCloseTimer: RepeatingTimer?
+		private var dbFilePath = ""
+		private var autoCloseTimeout: TimeInterval = 0
+		private var lastActivity: Double = 0
+		private var automaticallyClosed = false
+		private let blockQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBBlockQueue", attributes: [])
+		private var blockReference: UInt = 1
 
 		private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -1879,8 +1898,8 @@ private extension AgileDB {
 		}
 
 		func openDBFile(_ dbFilePath: String, autoCloseTimeout: Int, completion: @escaping (_ successful: BoolResults, _ openedFromOtherThread: Bool, _ fileExists: Bool) -> Void) {
-			_autoCloseTimeout = TimeInterval(exactly: autoCloseTimeout) ?? 0.0
-			_dbFilePath = dbFilePath
+			self.autoCloseTimeout = TimeInterval(exactly: autoCloseTimeout) ?? 0.0
+			self.dbFilePath = dbFilePath
 
 			let block = { [unowned self] in
 				let fileExists = FileManager.default.fileExists(atPath: dbFilePath)
@@ -1890,7 +1909,7 @@ private extension AgileDB {
 				}
 
 				if autoCloseTimeout > 0 {
-					self._autoCloseTimer = RepeatingTimer(timeInterval: self._autoCloseTimeout) {
+					self.autoCloseTimer = RepeatingTimer(timeInterval: self.autoCloseTimeout) {
 						self.close(automatically: true)
 					}
 				}
@@ -1915,18 +1934,18 @@ private extension AgileDB {
 		func close(automatically: Bool = false) {
 			let block = { [unowned self] in
 				if automatically {
-					if self._automaticallyClosed || Date().timeIntervalSince1970 < (self._lastActivity + Double(self._autoCloseTimeout)) {
+					if self.automaticallyClosed || Date().timeIntervalSince1970 < (self.lastActivity + Double(self.autoCloseTimeout)) {
 						return
 					}
 
-					self._autoCloseTimer?.suspend()
-					self._automaticallyClosed = true
+					self.autoCloseTimer?.suspend()
+					self.automaticallyClosed = true
 				} else {
 					self.isOpen = false
 				}
 
-				sqlite3_close_v2(self._sqliteDB)
-				self._sqliteDB = nil
+				sqlite3_close_v2(self.sqliteDB)
+				self.sqliteDB = nil
 			}
 
 			_ = addBlock(block)
@@ -1934,7 +1953,7 @@ private extension AgileDB {
 
 		func lastID(_ completion: @escaping (_ lastInsertionID: sqlite3_int64) -> Void) {
 			let block = { [unowned self] in
-				completion(sqlite3_last_insert_rowid(self._sqliteDB))
+				completion(sqlite3_last_insert_rowid(self.sqliteDB))
 			}
 
 			_ = addBlock(block)
@@ -1949,7 +1968,7 @@ private extension AgileDB {
 					}
 				}
 
-				var status = sqlite3_prepare_v2(self._sqliteDB, sql, -1, &dbps, nil)
+				var status = sqlite3_prepare_v2(self.sqliteDB, sql, -1, &dbps, nil)
 				if status != SQLITE_OK {
 					self.displaySQLError(sql)
 					completion(false)
@@ -1980,7 +1999,7 @@ private extension AgileDB {
 					}
 				}
 
-				var status = sqlite3_prepare_v2(self._sqliteDB, sql, -1, &dbps, nil)
+				var status = sqlite3_prepare_v2(self.sqliteDB, sql, -1, &dbps, nil)
 				if status != SQLITE_OK {
 					self.displaySQLError(sql)
 					completion(RowResults.failure(DBError(rawValue: Int(status))))
@@ -2031,32 +2050,32 @@ private extension AgileDB {
 		func removeExecutionBlock(_ blockReference: UInt, completion: @escaping (_ success: Bool) -> Void) {
 			let block = {
 				var blockArrayIndex: Int?
-				for i in 0..<self._queuedBlocks.count {
-					if self._queuedBlocks[i].blockReference == blockReference {
+				for i in 0..<self.queuedBlocks.count {
+					if self.queuedBlocks[i].blockReference == blockReference {
 						blockArrayIndex = i
 						break
 					}
 				}
 
 				if let blockArrayIndex = blockArrayIndex {
-					self._queuedBlocks.remove(at: blockArrayIndex)
+					self.queuedBlocks.remove(at: blockArrayIndex)
 					completion(true)
 				} else {
 					completion(false)
 				}
 			}
 
-			_blockQueue.sync {
-				if _blockReference > (UInt.max - 5) {
-					_blockReference = 1
+			blockQueue.sync {
+				if blockReference > (UInt.max - 5) {
+					self.blockReference = 1
 				} else {
-					_blockReference += 1
+					self.blockReference += 1
 				}
 
-				let executionBlock = ExecutionBlock(block: block, blockReference: _blockReference)
+				let executionBlock = ExecutionBlock(block: block, blockReference: blockReference)
 
-				_queuedBlocks.insert(executionBlock, at: 0)
-				_threadLock.signal()
+				queuedBlocks.insert(executionBlock, at: 0)
+				threadLock.signal()
 			}
 
 		}
@@ -2070,7 +2089,7 @@ private extension AgileDB {
 					}
 				}
 
-				var status = sqlite3_prepare_v2(self._sqliteDB, sql, -1, &dbps, nil)
+				var status = sqlite3_prepare_v2(self.sqliteDB, sql, -1, &dbps, nil)
 				if status != SQLITE_OK {
 					self.displaySQLError(sql)
 					completion(false)
@@ -2149,14 +2168,14 @@ private extension AgileDB {
 		}
 
 		private var dbErrorMessage: String {
-			guard let message = UnsafePointer<Int8>(sqlite3_errmsg(_sqliteDB)) else { return "Unknown Error" }
+			guard let message = UnsafePointer<Int8>(sqlite3_errmsg(sqliteDB)) else { return "Unknown Error" }
 			return String(cString: message)
 		}
 
 		private func explain(_ sql: String) {
 			var dbps: OpaquePointer?
 			let explainCommand = "EXPLAIN QUERY PLAN \(sql)"
-			sqlite3_prepare_v2(_sqliteDB, explainCommand, -1, &dbps, nil)
+			sqlite3_prepare_v2(sqliteDB, explainCommand, -1, &dbps, nil)
 			print("\n\n.  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  \nQuery:\(sql)\n\nAnalysis:\n")
 			while (sqlite3_step(dbps) == SQLITE_ROW) {
 				let iSelectid = sqlite3_column_int(dbps, 0)
@@ -2171,58 +2190,58 @@ private extension AgileDB {
 		}
 
 		private func addBlock(_ block: Any) -> UInt {
-			_blockQueue.sync {
-				if _blockReference > (UInt.max - 5) {
-					_blockReference = 1
+			blockQueue.sync {
+				if blockReference > (UInt.max - 5) {
+					blockReference = 1
 				} else {
-					_blockReference += 1
+					blockReference += 1
 				}
 			}
 
-			_blockQueue.async {
-				let executionBlock = ExecutionBlock(block: block, blockReference: self._blockReference)
+			blockQueue.async {
+				let executionBlock = ExecutionBlock(block: block, blockReference: self.blockReference)
 
-				self._queuedBlocks.append(executionBlock)
-				self._threadLock.signal()
+				self.queuedBlocks.append(executionBlock)
+				self.threadLock.signal()
 			}
 
-			return _blockReference
+			return blockReference
 		}
 
 		override func main() {
 			while true {
-				_autoCloseTimer?.suspend()
+				autoCloseTimer?.suspend()
 
-				if _automaticallyClosed {
+				if automaticallyClosed {
 					let results = openFile()
 					if case .failure(_) = results {
 						fatalError("Unable to open DB")
 					}
 				}
 
-				while _queuedBlocks.isNotEmpty {
+				while queuedBlocks.isNotEmpty {
 					if isDebugging {
 						Thread.sleep(forTimeInterval: 0.1)
 					}
 
-					_blockQueue.sync {
-						if let executionBlock = _queuedBlocks.first, let block = executionBlock.block as? () -> Void {
-							_queuedBlocks.removeFirst()
+					blockQueue.sync {
+						if let executionBlock = queuedBlocks.first, let block = executionBlock.block as? () -> Void {
+							queuedBlocks.removeFirst()
 							block()
 						}
 					}
 				}
 
-				_lastActivity = Date().timeIntervalSince1970
-				_autoCloseTimer?.resume()
+				lastActivity = Date().timeIntervalSince1970
+				autoCloseTimer?.resume()
 
-				_threadLock.wait()
+				threadLock.wait()
 			}
 		}
 
 		private func openFile() -> Result<Bool, DBError> {
-			_sqliteDB = nil
-			let status = sqlite3_open_v2(_dbFilePath.cString(using: .utf8)!, &self._sqliteDB, SQLITE_OPEN_FILEPROTECTION_COMPLETE | SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, nil)
+			sqliteDB = nil
+			let status = sqlite3_open_v2(dbFilePath.cString(using: .utf8)!, &self.sqliteDB, SQLITE_OPEN_FILEPROTECTION_COMPLETE | SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, nil)
 
 			if status != SQLITE_OK {
 				if isDebugging {
@@ -2231,8 +2250,8 @@ private extension AgileDB {
 				return BoolResults.failure(DBError(rawValue: Int(status)))
 			}
 
-			_autoCloseTimer?.resume()
-			_automaticallyClosed = false
+			autoCloseTimer?.resume()
+			automaticallyClosed = false
 			return BoolResults.success(true)
 		}
 	}

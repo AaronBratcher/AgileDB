@@ -1,5 +1,5 @@
 //
-//  DictDecoder.swift
+//  DBObjectDecoder.swift
 //  AgileDB
 //
 //  Created by Aaron Bratcher  on 6/7/20.
@@ -8,27 +8,38 @@
 
 import Foundation
 
-class DictDecoder: Decoder {
+protocol DBObjectArrayMarker {
+	static var elementType: DBObject.Type { get }
+}
+
+extension Array: DBObjectArrayMarker where Element: DBObject {
+	static var elementType: DBObject.Type {
+		return Element.self
+	}
+}
+
+class DBObjectDecoder: Decoder {
 	var codingPath: [CodingKey] = []
 	var userInfo: [CodingUserInfoKey: Any] = [:]
 
-	var dict: [String: AnyObject]?
+	let dict: [String: AnyObject]
+	let db: AgileDB
 
-	init(_ dict: [String: AnyObject]) {
+	init(_ dict: [String: AnyObject], db: AgileDB) {
 		self.dict = dict
+		self.db = db
 	}
 
 	func container<Key>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> where Key: CodingKey {
-		guard let row = self.dict else { fatalError() }
-		return KeyedDecodingContainer(DictKeyedContainer<Key>(row))
+		return KeyedDecodingContainer(DictKeyedContainer<Key>(dict: dict, db: db))
 	}
 
 	func unkeyedContainer() throws -> UnkeyedDecodingContainer {
-		fatalError("SQLiteDecoder doesn't support unkeyed decoding")
+		fatalError("AgileDB doesn't support unkeyed decoding")
 	}
 
 	func singleValueContainer() throws -> SingleValueDecodingContainer {
-		fatalError("SQLiteDecoder doesn't support single value decoding")
+		fatalError("AgileDB doesn't support single value decoding")
 	}
 }
 
@@ -38,6 +49,7 @@ private enum DictDecoderError: Error {
 	case invalidURL(String)
 	case invalidUUID(String)
 	case invalidJSON(String)
+	case invalidNestedObject(String, String)
 }
 
 private extension Bool {
@@ -56,15 +68,16 @@ private extension Bool {
 
 private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	typealias Key = K
-	typealias DBDict = [String: AnyObject]
 
 	let codingPath: [CodingKey] = []
 	var allKeys: [K] { return dict.keys.compactMap { K(stringValue: $0) } }
 
-	private var dict: [String: AnyObject]
+	private let dict: [String: AnyObject]
+	private let db: AgileDB
 
-	init(_ dict: [String: AnyObject]) {
+	init(dict: [String: AnyObject], db: AgileDB) {
 		self.dict = dict
+		self.db = db
 	}
 
 	func contains(_ key: K) -> Bool {
@@ -77,6 +90,33 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 		}
 
 		return false
+	}
+
+	func decodeObject(_ type: DBObject.Type, forKey key: K) throws -> DBObject {
+		guard let value = dict[key.stringValue] as? String else {
+			throw DictDecoderError.missingValueForKey(key.stringValue)
+		}
+
+		guard let dbObject = type.init(db: db, key: value) else {
+			throw DictDecoderError.invalidNestedObject(key.stringValue, value)
+		}
+
+		return dbObject
+	}
+
+	func decodeObjectArray(_ type: DBObjectArrayMarker.Type, forKey key: K) throws -> [DBObject] {
+		guard let values = dict[key.stringValue] as? [String] else {
+			throw DictDecoderError.missingValueForKey(key.stringValue)
+		}
+
+		var objectValues: [DBObject] = []
+		for value in values {
+			if let dbObject = type.elementType.init(db: db, key: value) {
+				objectValues.append(dbObject)
+			}
+		}
+
+		return objectValues
 	}
 
 	func decode(_ type: Bool.Type, forKey key: K) throws -> Bool {
@@ -226,7 +266,11 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	}
 
 	func decode<T>(_ type: T.Type, forKey key: K) throws -> T where T: Decodable {
-		if Data.self == T.self {
+		if let dynamicType = T.self as? DBObject.Type {
+			return try decodeObject(dynamicType, forKey: key) as! T
+		} else if let dynamicType = T.self as? DBObjectArrayMarker.Type {
+			return try decodeObjectArray(dynamicType, forKey: key) as! T
+		} else if Data.self == T.self {
 			return try decode(Data.self, forKey: key) as! T
 		} else if Date.self == T.self {
 			return try decode(Date.self, forKey: key) as! T
@@ -257,7 +301,7 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 		} else if [Date].self == T.self {
 			let dateArray = try decodeArray([String].self, forKey: key)
 			guard let jsonData = try? JSONSerialization.data(withJSONObject: dateArray, options: .prettyPrinted) else {
-				throw DictDecoderError.invalidJSON("^^^ Unknown data structure")
+				throw DictDecoderError.invalidJSON("Unknown data structure")
 			}
 			let decoder = JSONDecoder()
 			decoder.dateDecodingStrategy = .formatted(AgileDB.dateFormatter)

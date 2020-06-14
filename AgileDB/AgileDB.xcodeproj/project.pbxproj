@@ -12,8 +12,9 @@
 		892FC3BD2466CC0400EA470B /* DBResultsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 892FC3BC2466CC0400EA470B /* DBResultsTests.swift */; };
 		894CDABC2441045300DB499A /* DBObjectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894CDABB2441045300DB499A /* DBObjectTests.swift */; };
 		894CF152245F7D43005D2FCC /* PublisherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894CF151245F7D43005D2FCC /* PublisherTests.swift */; };
+		897CEA41248F09C000011003 /* DBObjectEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897CEA40248F09C000011003 /* DBObjectEncoder.swift */; };
 		899930B4245C7844009C8089 /* PublicModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899930B3245C7844009C8089 /* PublicModels.swift */; };
-		89AE5A73248DBABC00156CD6 /* DictDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89AE5A72248DBABC00156CD6 /* DictDecoder.swift */; };
+		89AE5A73248DBABC00156CD6 /* DBObjectDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89AE5A72248DBABC00156CD6 /* DBObjectDecoder.swift */; };
 		89C898361D8FF9D100E3C870 /* AgileDB.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89C8982C1D8FF9D100E3C870 /* AgileDB.framework */; };
 		89C898471D8FFA4A00E3C870 /* AgileDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C898461D8FFA4A00E3C870 /* AgileDB.swift */; };
 		89C8984A1D8FFA7000E3C870 /* SyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C898481D8FFA7000E3C870 /* SyncTests.swift */; };
@@ -40,8 +41,10 @@
 		892FC3BC2466CC0400EA470B /* DBResultsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DBResultsTests.swift; sourceTree = "<group>"; };
 		894CDABB2441045300DB499A /* DBObjectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DBObjectTests.swift; sourceTree = "<group>"; };
 		894CF151245F7D43005D2FCC /* PublisherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublisherTests.swift; sourceTree = "<group>"; };
+		897CEA40248F09C000011003 /* DBObjectEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DBObjectEncoder.swift; sourceTree = "<group>"; };
 		899930B3245C7844009C8089 /* PublicModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicModels.swift; sourceTree = "<group>"; };
-		89AE5A72248DBABC00156CD6 /* DictDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictDecoder.swift; sourceTree = "<group>"; };
+		89AE5A72248DBABC00156CD6 /* DBObjectDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DBObjectDecoder.swift; sourceTree = "<group>"; };
+		89BCA5B024924F6C008D6AF8 /* AgileDB.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; name = AgileDB.xctestplan; path = AgileDB.xcodeproj/AgileDB.xctestplan; sourceTree = "<group>"; };
 		89C8982C1D8FF9D100E3C870 /* AgileDB.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AgileDB.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		89C898301D8FF9D100E3C870 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		89C898351D8FF9D100E3C870 /* AgileDBTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgileDBTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -78,6 +81,7 @@
 		89C898221D8FF9D100E3C870 = {
 			isa = PBXGroup;
 			children = (
+				89BCA5B024924F6C008D6AF8 /* AgileDB.xctestplan */,
 				89C8982E1D8FF9D100E3C870 /* AgileDB */,
 				89C898391D8FF9D100E3C870 /* AgileDBTests */,
 				89C8982D1D8FF9D100E3C870 /* Products */,
@@ -100,7 +104,8 @@
 				89C898461D8FFA4A00E3C870 /* AgileDB.swift */,
 				899930B3245C7844009C8089 /* PublicModels.swift */,
 				89FF2C8F2271DFED003C24AF /* DBObject.swift */,
-				89AE5A72248DBABC00156CD6 /* DictDecoder.swift */,
+				89AE5A72248DBABC00156CD6 /* DBObjectDecoder.swift */,
+				897CEA40248F09C000011003 /* DBObjectEncoder.swift */,
 				892017A72449241E0031A2A5 /* DBResults.swift */,
 				89E23C7C245B7622000F58CD /* DBResultsPublisher.swift */,
 				89C898301D8FF9D100E3C870 /* Info.plist */,
@@ -245,8 +250,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				89FF2C902271DFED003C24AF /* DBObject.swift in Sources */,
+				897CEA41248F09C000011003 /* DBObjectEncoder.swift in Sources */,
 				899930B4245C7844009C8089 /* PublicModels.swift in Sources */,
-				89AE5A73248DBABC00156CD6 /* DictDecoder.swift in Sources */,
+				89AE5A73248DBABC00156CD6 /* DBObjectDecoder.swift in Sources */,
 				89E23C7D245B7622000F58CD /* DBResultsPublisher.swift in Sources */,
 				892017A82449241E0031A2A5 /* DBResults.swift in Sources */,
 				89C898471D8FFA4A00E3C870 /* AgileDB.swift in Sources */,
