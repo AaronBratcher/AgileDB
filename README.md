@@ -8,28 +8,6 @@ Formerly known as ALBNoSQLDB
 - Completely thread safe since it uses it's own Thread subclass.
 - Use the publish method to work with Combine and SwiftUI
 
-### What's new in version 6.1 ###
-- DBObjects can recursively save and load DBObject and [DBObject] properties (Technically the key is stored so the referenced objects can be edited and saved independently)
-
-### What's new in version 6.0 ###
-- New publisher method for use in SwiftUI and Combine. The publisher returns the new DBResults object. All active publishers will send new results if published DBResults has added, deleted, or updated keys.
-- New DBResults object that's subscripted. Only the keys are stored for better memory use.
-- DBObject structures can now store [String], [Int], [Double], and [Date] types. (Nested objects not supported.)
-
-### What's new in version 5.1 ###
-- Developed and tested with Xcode 10.2 using Swift 5
-- Introduction of DBObject protocol. See below.
-- debugMode property renamed to isDebugging.
-- `key` object in value provided is now ignored instead of giving error.
-- New parameter `validateObjects` in the keysInTable method will ignore condition sets that refer to objects not in the table.
-
-### What's new in version 5 ###
-- Developed and tested with Xcode 10.1
-- Several methods deprecated with a renamed version available for clarity at the point of use.
-- Data can be retrieved asynchronously.
-- The class property `sharedInstance` has been renamed to `shared`.
-- Methods are no longer class-level, they must be accessed through an instance of the db. A simple way to update to this is to simply append .shared to the class name in any existing code.
-
 ## Installation Options ##
 - Swift Package Manager
 - Cocoapods `pod AgileDB`
@@ -368,3 +346,26 @@ public typealias syncProgressUpdate = (_ percentComplete: Double) -> Void
 public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpdate?) -> (Bool, String, Int)
 ```    
     
+# Revision History
+
+### 6.1 ###
+- DBObjects can recursively save and load DBObject and [DBObject] properties (Technically the key is stored so the referenced objects can be edited and saved independently)
+
+### 6.0 ###
+- New publisher method for use in SwiftUI and Combine. The publisher returns the new DBResults object. All active publishers will send new results if published DBResults has added, deleted, or updated keys.
+- New DBResults object that's subscripted. Only the keys are stored for better memory use.
+- DBObject structures can now store [String], [Int], [Double], and [Date] types. (Nested objects not supported.)
+
+### 5.1 ###
+- Developed and tested with Xcode 10.2 using Swift 5
+- Introduction of DBObject protocol. See below.
+- debugMode property renamed to isDebugging.
+- `key` object in value provided is now ignored instead of giving error.
+- New parameter `validateObjects` in the keysInTable method will ignore condition sets that refer to objects not in the table.
+
+### 5.0 ###
+- Developed and tested with Xcode 10.1
+- Several methods deprecated with a renamed version available for clarity at the point of use.
+- Data can be retrieved asynchronously.
+- The class property `sharedInstance` has been renamed to `shared`.
+- Methods are no longer class-level, they must be accessed through an instance of the db. A simple way to update to this is to simply append .shared to the class name in any existing code.
