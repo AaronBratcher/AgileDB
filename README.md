@@ -193,7 +193,7 @@ if let keys = AgileDB.shared.keysInTable(table, sortOrder: nil, conditions: [acc
 
 
 ### Values ###
-Data can be set or retrieved manually as shown here or your class/struct can adhere to the DBObject protocol, documented below, and use the built-in init and save methods.
+Data can be set or retrieved manually as shown here or your class/struct can adhere to the DBObject protocol, documented above, and use the built-in init and save methods for greater ease and flexibility.
 
 Set value in table
 ```swift
