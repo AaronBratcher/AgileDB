@@ -136,7 +136,6 @@ for index in 0..<categories.count {
     /**
     Returns a  Publisher for generic DBResults. Uses the table of the DBObject for results.
 
-    - parameter table: The table to query against.
     - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
     - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
     - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
@@ -179,7 +178,30 @@ if let tableKeys = AgileDB.shared.keysInTable(table, sortOrder:"name, date desc"
 }
 ```
 
-Return an array of keys in a given table matching a set of conditions. (see class documentation for more information)
+Return an array of keys from the given table sorted in the way specified matching the given conditions.
+```swift
+/**
+    All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
+	
+	Unsorted Example:
+	
+	let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
+	if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
+		// use keys
+	} else {
+		// handle error
+	}
+	
+	- parameter table: The DBTable to return keys from.
+	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
+	- parameter conditions: Optional array of DBConditions that specify what conditions must be met.
+	- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+	
+	- returns: [String]? Returns an array of keys from the table. Is nil when database could not be opened or other error occured.
+	*/
+    
+public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> [String]?
+
 ```swift
 let table: DBTable = "accounts"
 let accountCondition = DBCondition(set:0,objectKey:"account", conditionOperator:.equal, value:"ACCT1")
