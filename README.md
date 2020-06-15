@@ -133,20 +133,20 @@ for index in 0..<categories.count {
 
 ### Usage ###
 ```swift
-    /**
-    Returns a  Publisher for generic DBResults. Uses the table of the DBObject for results.
+/**
+Returns a  Publisher for generic DBResults. Uses the table of the DBObject for results.
 
-    - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
-    - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-    - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
+- parameter conditions: Optional array of DBConditions that specify what conditions must be met.
+- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
 
-    - returns: DBResultssPublisher
-    */
+- returns: DBResultssPublisher
+*/
 
-    let publisher: DBResultsPublisher<Transaction> = db.publisher()
-    let _ = publisher.sink(receiveCompletion: { _ in }) { ( results) in
-        // assign to AnyCancellable property
-    }
+let publisher: DBResultsPublisher<Transaction> = db.publisher()
+let _ = publisher.sink(receiveCompletion: { _ in }) { ( results) in
+// assign to AnyCancellable property
+}
 ```
 
 ## Low level methods ##
@@ -180,28 +180,27 @@ if let tableKeys = AgileDB.shared.keysInTable(table, sortOrder:"name, date desc"
 
 Return an array of keys from the given table sorted in the way specified matching the given conditions.
 ```swift
-	/**
-	All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
-	
-	Unsorted Example:
-	
-	let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
-	if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
-		// use keys
-	} else {
-		// handle error
-	}
-	
-	- parameter table: The DBTable to return keys from.
-	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
-	- parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-	- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
-	
-	- returns: [String]? Returns an array of keys from the table. Is nil when database could not be opened or other error occured.
+/**
+All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
 
-    
-	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> [String]?
-	*/
+Unsorted Example:
+
+let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
+if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
+	// use keys
+} else {
+	// handle error
+}
+
+- parameter table: The DBTable to return keys from.
+- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
+- parameter conditions: Optional array of DBConditions that specify what conditions must be met.
+- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+
+- returns: [String]? Returns an array of keys from the table. Is nil when database could not be opened or other error occured.
+
+public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> [String]?
+*/
 
 
 let table: DBTable = "accounts"
