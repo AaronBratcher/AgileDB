@@ -6,6 +6,7 @@ Formerly known as ALBNoSQLDB
 - A SQLite database wrapper written in Swift that requires no SQL knowledge to use.
 - No need to keep track of columns used in the database; it's automatic.
 - Completely thread safe since it uses it's own Thread subclass.
+- Use the publish method to work with Combine and SwiftUI
 
 ### What's new in version 6.1 ###
 - DBObjects can recursively save and load DBObject and [DBObject] properties (Technically the key is stored so the referenced objects can be edited and saved independently)
