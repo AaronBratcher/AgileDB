@@ -42,7 +42,7 @@ public init?(db: AgileDB, key: String)
 
 
 /**
- Save the object to the database based on the values set in the encode method of the object.
+ Save the object's encoded values to the database.
 
  - parameter db: Database object to hold the data.
  - parameter expiration: Optional Date specifying when the data is to be automatically deleted. Default value is nil specifying no automatic deletion.
