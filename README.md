@@ -36,7 +36,7 @@ Formerly known as ALBNoSQLDB
 - Include all .swift source files in your project
 
 ## Getting Started ##
-- The easiest way to use AgileDB is to use objects that adhere to the DBObject Protocol. This allows you to easily save or instantiate objects to/from the database. Objects can have the following types: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date]. All properties may be optional. For DBObjects, the key is stored so the referenced objects can be edited and saved independently
+- The easiest way to use AgileDB is to use objects that adhere to the DBObject Protocol. This allows you to easily save or instantiate objects to/from the database. Objects can have the following types: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date]. All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
 - Alternately, you can use low level methods that work from JSON strings. Supported types in the JSON are string, int, double, bool and arrays of string, int, or double off the base object.
 - Any that returns an optional, that value is nil if an error occured and could not return a proper value.
 
