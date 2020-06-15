@@ -14,7 +14,7 @@ Formerly known as ALBNoSQLDB
 - Include all .swift source files in your project
 
 ## Getting Started ##
-- The easiest way to use AgileDB is to create a class or struct that adheres to the DBObject Protocol. These entities will automatically be `Codable`. Any encoded values are saved to the database. (See below for supported value types)
+- The easiest way to use AgileDB is to create a class or struct that adheres to the DBObject Protocol. These entities will automatically be `Codable`. Encoded values are saved to the database. (See below for supported value types)
 - Alternately, you can use low level methods that work from JSON strings. Supported types in the JSON are string, int, double, bool and arrays of string, int, or double off the base object.
 - Any method that returns an optional, that value is nil if an error occured and could not return a proper value.
 
