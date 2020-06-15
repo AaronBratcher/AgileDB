@@ -180,8 +180,8 @@ if let tableKeys = AgileDB.shared.keysInTable(table, sortOrder:"name, date desc"
 
 Return an array of keys from the given table sorted in the way specified matching the given conditions.
 ```swift
-/**
-    All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
+	/**
+	All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
 	
 	Unsorted Example:
 	
@@ -198,11 +198,12 @@ Return an array of keys from the given table sorted in the way specified matchin
 	- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
 	
 	- returns: [String]? Returns an array of keys from the table. Is nil when database could not be opened or other error occured.
-	*/
-    
-public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> [String]?
 
-```swift
+    
+	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> [String]?
+	*/
+
+
 let table: DBTable = "accounts"
 let accountCondition = DBCondition(set:0,objectKey:"account", conditionOperator:.equal, value:"ACCT1")
 if let keys = AgileDB.shared.keysInTable(table, sortOrder: nil, conditions: [accountCondition]) {
