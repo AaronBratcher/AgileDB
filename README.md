@@ -8,7 +8,7 @@ Formerly known as ALBNoSQLDB
 - Completely thread safe since it uses it's own Thread subclass.
 
 ### What's new in version 6.1 ###
-- DBObjects can recursively save and load DBObject and [DBObject] properties
+- DBObjects can recursively save and load DBObject and [DBObject] properties (Technically the key is stored so the referenced objects can be edited and saved independently)
 
 ### What's new in version 6.0 ###
 - New publisher method for use in SwiftUI and Combine. The publisher returns the new DBResults object. All active publishers will send new results if published DBResults has added, deleted, or updated keys.
@@ -35,7 +35,7 @@ Formerly known as ALBNoSQLDB
 - Include all .swift source files in your project
 
 ## Getting Started ##
-- The easiest way to use AgileDB is to use objects that adhere to the DBObject Protocol. This allows you to easily save or instantiate objects to/from the database. Objects can have the following types: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date]. (All properties may be optional)
+- The easiest way to use AgileDB is to use objects that adhere to the DBObject Protocol. This allows you to easily save or instantiate objects to/from the database. Objects can have the following types: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date]. All properties may be optional. For DBObjects, the key is stored so the referenced objects can be edited and saved independently
 - Alternately, you can use low level methods that work from JSON strings. Supported types in the JSON are string, int, double, bool and arrays of string, int, or double off the base object.
 - Any that returns an optional, that value is nil if an error occured and could not return a proper value.
 
