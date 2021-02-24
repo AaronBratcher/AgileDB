@@ -160,6 +160,9 @@ class AsyncTests: XCTestCase {
 	}
 
 	func testAsyncTableKeys() {
+        let expectations = expectation(description: "tableKeys1")
+        expectations.expectedFulfillmentCount = 1
+        
 		let table: DBTable = "asyncTable2"
 		db.dropTable(table)
 		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
@@ -174,10 +177,16 @@ class AsyncTests: XCTestCase {
 			} else {
 				XCTFail()
 			}
+            expectations.fulfill()
 		}
+        
+        waitForExpectations(timeout: 20, handler: nil)
 	}
 
 	func testAsyncTableHasKey() {
+        let expectations = expectation(description: "tableKeys2")
+        expectations.expectedFulfillmentCount = 1
+
 		let table: DBTable = "asyncTable3"
 		db.dropTable(table)
 		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
@@ -192,10 +201,50 @@ class AsyncTests: XCTestCase {
 			} else {
 				XCTFail()
 			}
+            expectations.fulfill()
 		}
+        
+        waitForExpectations(timeout: 20, handler: nil)
 	}
 
+    func testAsyncTableHasAllKeys() {
+        let expectations = expectation(description: "tableKeys3")
+        expectations.expectedFulfillmentCount = 2
+
+        let table: DBTable = "asyncTable3"
+        db.dropTable(table)
+        db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
+
+        db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"]) { (results) in
+            if case .success(let hasKeys) = results {
+                XCTAssertTrue(hasKeys)
+            } else {
+                XCTFail()
+            }
+            expectations.fulfill()
+            
+            self.db.deleteFromTable(table, for: "testKey4")
+            self.db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"]) { (results) in
+                if case .success(let hasKeys) = results {
+                    XCTAssertFalse(hasKeys)
+                } else {
+                    XCTFail()
+                }
+                expectations.fulfill()
+            }
+        }
+        
+        waitForExpectations(timeout: 20, handler: nil)
+    }
+
 	func testAsyncValues() {
+        let expectations = expectation(description: "tableKeys4")
+        expectations.expectedFulfillmentCount = 1
+        
 		let table: DBTable = "asyncTable4"
 		db.dropTable(table)
 		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
@@ -210,6 +259,9 @@ class AsyncTests: XCTestCase {
 			} else {
 				XCTFail()
 			}
+            expectations.fulfill()
 		}
+        
+        waitForExpectations(timeout: 20, handler: nil)
 	}
 }
