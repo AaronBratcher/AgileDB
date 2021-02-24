@@ -168,6 +168,21 @@ if let hasKey = AgileDB.shared.tableHasKey(table:table, key:"category1") {
 }
 ```
 
+See if a given table holds all given keys.
+```swift
+let table: DBTable = "categories"
+if let hasKeys = AgileDB.shared.tableHasAllKeys(table:table, keys:["category1","category2","category3"]) {
+    // process here
+    if hasKeys {
+        // table has all keys
+    } else {
+        // table didn't have key
+    }
+} else {
+    // handle error
+}
+```
+
 Return an array of keys in a given table. Optionally specify sort order based on a value at the root level
 ```swift
 let table: DBTable = "categories"
@@ -291,6 +306,7 @@ let successful = token.cancel()
 
 *Asynchronous methods available*
 - tableHasKey
+- tableHasAllKeys
 - keysInTable
 - valueFromTable
 - dictValueFromTable

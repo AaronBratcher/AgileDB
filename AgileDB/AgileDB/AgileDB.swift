@@ -188,7 +188,36 @@ public final class AgileDB {
 
 		return nil
 	}
+    
+    /**
+    Checks if the given table contains all the given key.s
+    
+    - parameter table: The table to search.
+    - parameter keys: The keys to look for.
+    
+    - returns: Bool? Returns if the key exists in the table. Is nil when database could not be opened or other error occured.
+    */
+    public func tableHasAllKeys(table: DBTable, keys: [String]) -> Bool? {
+        let openResults = openDB()
+        if case .failure(_) = openResults {
+            return nil
+        }
 
+        if !tables.hasTable(table) {
+            return false
+        }
+        
+        let keyString = keys.map({ "'\($0)'" }).joined(separator:",")
+
+        let sql = "select 1 from \(table) where key in (\(keyString))"
+        let results = sqlSelect(sql)
+        if let results = results {
+            return results.count == keys.count
+        }
+
+        return nil
+    }
+    
 	/**
 	Asynchronously checks if the given table contains the given key.
 	
@@ -234,7 +263,55 @@ public final class AgileDB {
 
 		return DBCommandToken(database: self, identifier: blockReference)
 	}
+    
+    /**
+    Asynchronously checks if the given table contains all the given keys.
+    
+    - parameter table: The table to search.
+    - parameter keys: The keys to look for.
+    - parameter queue: Dispatch queue to use when running the completion closure. Default value is main queue.
+    - parameter completion: Closure to use for results.
+    
+    - returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
+    */
+    @discardableResult
+    public func tableHasAllKeys(table: DBTable, keys: [String], queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
+        let openResults = openDB()
+        if case .failure(_) = openResults {
+            return nil
+        }
 
+        if !tables.hasTable(table) {
+            let dispatchQueue = queue ?? DispatchQueue.main
+            dispatchQueue.async {
+                completion(Result<Bool, DBError>.success(false))
+            }
+            return DBCommandToken(database: self, identifier: 0)
+        }
+        
+        let keyString = keys.map({ "'\($0)'" }).joined(separator:",")
+
+        let sql = "select 1 from \(table) where key in (\(keyString))"
+        let blockReference = dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
+            let dispatchQueue = queue ?? DispatchQueue.main
+            dispatchQueue.async {
+                let results: BoolResults
+
+                switch rowResults {
+                case .success(let rows):
+                    results = .success(rows.count == keys.count)
+
+                case .failure(let error):
+                    results = .failure(error)
+                }
+
+                completion(results)
+            }
+        })
+
+        return DBCommandToken(database: self, identifier: blockReference)
+    }
+    
 	/**
 	Returns an array of keys from the given table sorted in the way specified matching the given conditions. All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
 	

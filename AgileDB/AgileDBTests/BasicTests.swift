@@ -161,7 +161,33 @@ class BasicTests: XCTestCase {
 		} else {
 			XCTAssert(false, "bool not returned")
 		}
+        db.dropTable(table)
 	}
+    
+    func testTableHasAllKeys() {
+        let table: DBTable = "table0"
+        let sample = "{\"numValue\":2,\"arrayValue\":[6,7,8,9,10]}"
+
+        db.setValueInTable(table, for: "testKey1", to: sample, autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey2", to: sample, autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey3", to: sample, autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey4", to: sample, autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey5", to: sample, autoDeleteAfter: nil)
+
+        if let hasKeys = db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"]) {
+            XCTAssertTrue(hasKeys, "invalid test result")
+        } else {
+            XCTAssert(false, "bool not returned")
+        }
+        
+        db.deleteFromTable(table, for: "testKey1")
+        if let hasKeys = db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"]) {
+            XCTAssertFalse(hasKeys, "invalid test result")
+        } else {
+            XCTAssert(false, "bool not returned")
+        }
+
+    }
 
 	func testKeyFetch() {
 		let table: DBTable = "table2"
