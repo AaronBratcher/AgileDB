@@ -475,7 +475,7 @@ public final class AgileDB {
 
 		guard let dataValue = value.data(using: .utf8) else { return false }
 
-		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
 		assert(objectValues != nil, "Value must be valid JSON string that is a dictionary for the top-level object")
 
 		return setValueInTable(table, for: key, to: objectValues!, autoDeleteAfter: autoDeleteAfter)
@@ -972,7 +972,7 @@ public final class AgileDB {
 			if let fileText = try? String(contentsOfFile: filePath, encoding: String.Encoding.utf8) {
 				let dataValue = fileText.dataValue()
 
-				if let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject] {
+				if let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject] {
 					let sourceDB = objectValues["sourceDB"] as! String
 					let logEntries = objectValues["logEntries"] as! [[String: AnyObject]]
 					let lastSequence = objectValues["lastSequence"] as! Int

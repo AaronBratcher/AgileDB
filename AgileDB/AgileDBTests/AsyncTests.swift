@@ -255,7 +255,10 @@ class AsyncTests: XCTestCase {
 
 		db.valueFromTable(table, for: "testKey3") { (results) in
 			if case .success(let value) = results {
-				XCTAssert(value == "{\"numValue\":2,\"value2\":3}")
+                let jsonData = value.data(using: .utf8)!
+                let jsonObject: [String: Int] = try! JSONSerialization.jsonObject(with: jsonData, options: .mutableContainers) as! [String: Int]
+                XCTAssertTrue(jsonObject["numValue"] == 2)
+                XCTAssertTrue(jsonObject["value2"] == 3)
 			} else {
 				XCTFail()
 			}

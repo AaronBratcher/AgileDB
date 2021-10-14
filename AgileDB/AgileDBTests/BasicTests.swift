@@ -59,7 +59,7 @@ class BasicTests: XCTestCase {
 		let key = "SIMPLEINSERTKEY"
 		let sample = "{\"numValue\":1,\"dateValue\":\"2014-11-19T18:23:42.434-05:00\",\"link\":true}"
 		let sampleData = sample.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-		let sampleDict = (try? JSONSerialization.jsonObject(with: sampleData, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+		let sampleDict = (try? JSONSerialization.jsonObject(with: sampleData, options: .mutableContainers)) as? [String: AnyObject]
 		let successful = db.setValueInTable(table, for: key, to: sample, autoDeleteAfter: nil)
 
 		XCTAssert(successful, "setValueFailed")
@@ -68,7 +68,7 @@ class BasicTests: XCTestCase {
 
 		// compare dict values
 		let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
 		let equalDicts = objectValues?.count == sampleDict?.count
 		let linked = objectValues!["link"] as! Bool
 
@@ -82,7 +82,7 @@ class BasicTests: XCTestCase {
 		let key = "ARRAYINSERTKEY"
 		let sample = "{\"numValue\":1,\"dateValue\":\"2014-11-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5],\"array2Value\":[\"1\",\"b\"]}"
 		let sampleData = sample.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-		let sampleDict = (try? JSONSerialization.jsonObject(with: sampleData, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+		let sampleDict = (try? JSONSerialization.jsonObject(with: sampleData, options: .mutableContainers)) as? [String: AnyObject]
 		let successful = db.setValueInTable(table, for: key, to: sample, autoDeleteAfter: nil)
 
 		XCTAssert(successful, "setValueFailed")
@@ -94,7 +94,7 @@ class BasicTests: XCTestCase {
 		// compare dict values
 		if let jsonValue = jsonValue {
 			let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-			let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+			let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
 			let equalDicts = objectValues?.count == sampleDict?.count
 			XCTAssert(equalDicts, "Dictionaries don't match")
 
@@ -130,7 +130,7 @@ class BasicTests: XCTestCase {
 		// compare dict values
 		if let jsonValue = jsonValue {
 			let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-			let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+			let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
 			let numValue = objectValues!["numValue"] as! Int
 
 			XCTAssert(numValue == 2, "number didn't change properly")

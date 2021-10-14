@@ -94,7 +94,7 @@ class SyncTests: XCTestCase {
 		// read in file and make sure it is valid JSON
 		if let fileHandle = FileHandle(forReadingAtPath: logFilePath) {
 			let dataValue = fileHandle.readDataToEndOfFile()
-			if let _ = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject] {
+			if let _ = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject] {
 				// conversion successful
 			} else {
 				XCTAssert(false, "invalid sync file format")
@@ -210,7 +210,7 @@ class SyncTests: XCTestCase {
 			// compare dict values
 			if let jsonValue = jsonValue {
 				let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-				let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+				let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
 				let numValue = objectValues!["numValue"] as! Int
 
 				XCTAssert(numValue == 13, "number unexpectedly got changed")
@@ -220,7 +220,7 @@ class SyncTests: XCTestCase {
 			// compare dict values
 			if let jsonValue = jsonValue {
 				let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-				let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: JSONSerialization.ReadingOptions.mutableContainers)) as? [String: AnyObject]
+				let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
 				let numValue = objectValues!["numValue"] as! Int
 
 				XCTAssert(numValue == 5, "number was not changed")
