@@ -387,6 +387,9 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
     
 # Revision History
 
+### 6.2 ###
+- New method: tableHasAllKeys and it's asynchronous equivilent
+
 ### 6.1 ###
 - DBObjects can recursively save and load DBObject and [DBObject] properties (Technically the key is stored so the referenced objects can be edited and saved independently)
 
