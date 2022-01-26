@@ -1,15 +1,13 @@
 # AgileDB
 [![CocoaPods](https://img.shields.io/cocoapods/v/AgileDB.svg)](https://cocoapods.org/)
 
-Formerly known as ALBNoSQLDB
-
 - A SQLite database wrapper written in Swift that requires no SQL knowledge to use.
 - No need to keep track of columns used in the database; it's automatic.
 - Completely thread safe since it uses it's own Thread subclass.
 - Use the publish method to work with Combine and SwiftUI
 
 ## Installation Options ##
-- Swift Package Manager
+- Swift Package Manager (Recommended)
 - Cocoapods `pod AgileDB`
 - Include all .swift source files in your project
 
