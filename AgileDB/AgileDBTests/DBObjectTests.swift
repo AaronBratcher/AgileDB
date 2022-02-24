@@ -137,7 +137,7 @@ class DBObjectTests: XCTestCase {
         transaction.save(to: db)
         
         do {
-            let object = try await Transaction.loadFromDB(db, for: TransactionValue.key)
+            let object = try await Transaction.load(from: db, for: TransactionValue.key)
             XCTAssertEqual(object.accountKey, TransactionValue.accountKey)
             XCTAssertEqual(object.amount, TransactionValue.amount)
         } catch {

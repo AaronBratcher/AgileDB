@@ -83,7 +83,7 @@ extension DBObject {
     - throws: DBError
     */
     
-    public static func loadFromDB(_ db: AgileDB, for key: String) async throws -> Self {
+    public static func load(from db: AgileDB, for key: String) async throws -> Self {
         let dictionaryValue = try await db.dictValueFromTable(table, for: key)
         guard let dbObject = dbObjectWithDict(dictionaryValue, db: db, for: key) else {
             throw DBError.cannotParseData
@@ -102,7 +102,7 @@ extension DBObject {
 	
 	- returns: DBCommandToken that can be used to cancel the call before it executes. Nil is returned if database could not be opened.
 	*/
-    @available(*, deprecated, message: "Use await loadFromDB instead")
+    @available(*, deprecated, message: "Use await load instead")
 	@discardableResult
 	public static func loadObjectFromDB(_ db: AgileDB, for key: String, queue: DispatchQueue? = nil, completion: @escaping (Self) -> Void) -> DBCommandToken? {
 		let token = db.dictValueFromTable(table, for: key, queue: queue, completion: { (results) in

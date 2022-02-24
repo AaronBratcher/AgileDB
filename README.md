@@ -40,17 +40,6 @@ public protocol DBObject: Codable {
 public init?(db: AgileDB, key: String)
 
 /**
- Asynchronously instantiates object and populate with values from the database.
-
- - parameter db: Database object holding the data.
- - parameter key: Key of the data entry.
- 
- - throws: DBError
-*/
-public init(db: AgileDB, key: String) async throws
-
-
-/**
  Save the object's encoded values to the database.
 
  - parameter db: Database object to hold the data.
@@ -61,9 +50,16 @@ public init(db: AgileDB, key: String) async throws
 @discardableResult
 public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil) -> Bool
 
+/**
+ Remove the object from the database
+
+ - parameter db: Database object that holds the data. This does not delete nested objects.
+ - returns: Discardable Bool value of a successful deletion.
+*/
+public func delete(from db: AgileDB) -> Bool
 
 /**
- Asynchronously instantiate object and populate with values from the database.
+ Asynchronously instantiate object and populate with values from the database, recursively if necessary.
 
  - parameter db: Database object to hold the data.
  - parameter key: Key of the data entry.
@@ -71,21 +67,7 @@ public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil) -> Boo
  - returns: DBObject
  - throws: DBError
 */
-public static func loadFromDB(_ db: AgileDB, for key: String) -> Self?
-
-
-/**
- Asynchronously instantiate object and populate with values from the database before executing the passed block with object. If object could not be instantiated properly, block is not executed.
-
- - parameter db: Database object to hold the data.
- - parameter key: Key of the data entry.
- - parameter queue: DispatchQueue to run the execution block on. Default value is nil specifying the main queue.
- - parameter block: Block of code to execute with instantiated object.
-
- - returns: DBCommandToken that can be used to cancel the call before it executes. Nil is returned if database could not be opened.
-*/
-public static func loadObjectFromDB(_ db: AgileDB, for key: String, queue: DispatchQueue? = nil, completion: @escaping (Self) -> Void) -> DBCommandToken?
-
+public static func load(from db: AgileDB, for key: String) async throws -> Self
 ```
 
 ### Sample Struct ###
@@ -116,8 +98,10 @@ category.save(to: db, autoDeleteAfter: deletionDate)
 guard let category = Category(db: db, key: categoryKey) else { return }
 
 // instantiate asynchronously
-let token = Category.loadObjectFromDB(db, for: categoryKey) { (category) in
-    // use category object
+do {
+	let category = try await Category.load(from: db, for: categoryKey)
+	// use category
+} catch {
 }
 
 // token allows you to cancel the asynchronous call before completion
@@ -300,28 +284,17 @@ if AgileDB.shared.deleteFromTable(table, for:"category1") {
 ```
 
 ## Retrieving Data Asynchronously ##
-With version 5, AgileDB allows data to be retrieved asynchronously. A DBCommandToken is returned that allows the command to be canceled before it is acted upon. For instance, a database driven TableView may be scrolled too quickly for the viewing of data to useful. In the prepareForReuse method, the token's cancel method could be called so the database is not tasked in retrieving data for a cell that is no longer viewed.
+With version 6.3, AgileDB allows data to be retrieved asynchronously using `await`.
 
 ```swift
 let db = AgileDB.shared
 let table: DBTable = "categories"
 
-guard let token = db.valueFromTable(table, for: key, completion: { (results) in
-    if case .success(let value) = results {
-        // use value
-    } else {
-        // error
-    }
-}) else {
-    XCTFail("Unable to get value")
-    return
+do {
+	let value = try db.valueFromTable(table, for: key)
+	
+} catch {
 }
-
-// save token for later use
-self.token = token
-
-// cancel operation
-let successful = token.cancel()
 ```
 
 *Asynchronous methods available*
@@ -331,7 +304,7 @@ let successful = token.cancel()
 - valueFromTable
 - dictValueFromTable
 - sqlSelect
-- loadObjectFromDB in the DBObject protocol
+- load in the DBObject protocol
 
 ## SQL Queries ##
 AgileDB allows you to do standard SQL selects for more complex queries. Because the values given are actually broken into separate columns in the tables, a standard SQL statement can be passed in and an array of rows (arrays of values) will be optionally returned.
@@ -408,6 +381,7 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 # Revision History
 
 ### 6.3 ###
+- Minimum swift version updated to 5.5
 - Add async/await support
 
 ### 6.2 ###
