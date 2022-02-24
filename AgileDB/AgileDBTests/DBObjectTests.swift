@@ -131,6 +131,19 @@ class DBObjectTests: XCTestCase {
 
 		waitForExpectations(timeout: 2, handler: nil)
 	}
+    
+    func testLoadFromDB() async throws {
+        let transaction = Transaction(key: TransactionValue.key, date: Date(), accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
+        transaction.save(to: db)
+        
+        do {
+            let object = try await Transaction.loadFromDB(db, for: TransactionValue.key)
+            XCTAssertEqual(object.accountKey, TransactionValue.accountKey)
+            XCTAssertEqual(object.amount, TransactionValue.amount)
+        } catch {
+            XCTFail()
+        }
+    }
 
 	func testNestedSave() throws {
 		let transaction = EncodingTransaction()

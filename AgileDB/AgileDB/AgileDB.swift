@@ -228,7 +228,7 @@ public final class AgileDB {
      - throws: DBError
      */
     
-    public func asyncTableHasKey(table: DBTable, key: String) async throws -> Bool {
+    public func tableHasKey(table: DBTable, key: String) async throws -> Bool {
         let results = await bridgingTableHasKey(table: table, key: key)
         switch results {
         case .success(let hasKey):
@@ -256,7 +256,7 @@ public final class AgileDB {
 	
 	- returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
 	*/
-    @available(*, deprecated, message: "Use await asyncTableHasKey instead")
+    @available(*, deprecated, message: "Use await tableHasKey instead")
 	@discardableResult
 	public func tableHasKey(table: DBTable, key: String, queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
@@ -303,7 +303,7 @@ public final class AgileDB {
      - throws: DBError
      */
     
-    public func asyncTableHasAllKeys(table: DBTable, keys: [String]) async throws -> Bool {
+    public func tableHasAllKeys(table: DBTable, keys: [String]) async throws -> Bool {
         let results = await bridgingTableHasAllKeys(table: table, keys: keys)
         switch results {
         case .success(let hasKeys):
@@ -331,7 +331,7 @@ public final class AgileDB {
     
     - returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
     */
-    @available(*, deprecated, message: "Use await asyncTableHasAllKeys instead")
+    @available(*, deprecated, message: "Use await tableHasAllKeys instead")
     @discardableResult
     public func tableHasAllKeys(table: DBTable, keys: [String], queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
         let openResults = openDB()
@@ -420,7 +420,7 @@ public final class AgileDB {
      - throws: DBError
      */
     
-    public func asyncKeysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> [String] {
+    public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> [String] {
         let results = await bridgingKeysInTable(table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
         switch results {
         case .success(let keys):
@@ -463,7 +463,7 @@ public final class AgileDB {
 	*/
 
 	@discardableResult
-    @available(*, deprecated, message: "Use await asyncKeysInTable instead")
+    @available(*, deprecated, message: "Use await keysInTable instead")
 	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping (KeyResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults {
@@ -636,7 +636,7 @@ public final class AgileDB {
      - throws: DBError
      */
     
-    public func asyncValueFromTable(_ table: DBTable, for key: String) async throws -> String {
+    public func valueFromTable(_ table: DBTable, for key: String) async throws -> String {
         let results = await bridgingValueFromTable(table, for: key)
         
         switch results {
@@ -669,7 +669,7 @@ public final class AgileDB {
 	
 	*/
 	@discardableResult
-    @available(*, deprecated, message: "Use await asyncValueFromTable instead")
+    @available(*, deprecated, message: "Use await valueFromTable instead")
 	public func valueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (JsonResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults, !tables.hasTable(table) {
@@ -738,7 +738,7 @@ public final class AgileDB {
      - throws: DBError
      */
     
-    public func asyncDictValueFromTable(_ table: DBTable, for key: String) async throws -> [String: AnyObject] {
+    public func dictValueFromTable(_ table: DBTable, for key: String) async throws -> [String: AnyObject] {
         let results = await bridgingDictValueFromTable(table, for: key)
         
         switch results {
@@ -775,7 +775,7 @@ public final class AgileDB {
 	- returns: Returns a DBCommandToken that can be used to cancel the command before it executes. If the database file cannot be opened or table does not exist nil is returned.
 	*/
 	@discardableResult
-    @available(*, deprecated, message: "Use await asyncDictValueFromTable instead")
+    @available(*, deprecated, message: "Use await dictValueFromTable instead")
 	public func dictValueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (DictResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults, !tables.hasTable(table) {
@@ -2038,7 +2038,7 @@ extension AgileDB {
      - throws: DBError
      */
     
-    public func asyncSqlSelect(_ sql: String) async throws -> [DBRow] {
+    public func sqlSelect(_ sql: String) async throws -> [DBRow] {
         let results = await bridgingSqlSelect(sql)
         
         switch results {
@@ -2064,7 +2064,7 @@ extension AgileDB {
 
      - returns: Result<[DBRow], DBError>
      */
-    @available(*, deprecated, message: "Use await asyncSqlSelect instead")
+    @available(*, deprecated, message: "Use await sqlSelect instead")
     @discardableResult
 	public func sqlSelect(_ sql: String, queue: DispatchQueue? = nil, completion: @escaping (RowResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()

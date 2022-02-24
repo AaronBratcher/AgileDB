@@ -4,6 +4,7 @@
 - A SQLite database wrapper written in Swift that requires no SQL knowledge to use.
 - No need to keep track of columns used in the database; it's automatic.
 - Completely thread safe since it uses it's own Thread subclass.
+- Works with Async/Await
 - Use the publish method to work with Combine and SwiftUI
 
 ## Installation Options ##
@@ -17,9 +18,8 @@
 - For any method that returns an optional, that value is nil if an error occured and could not return a proper value.
 
 ## DBObject Protocol ##
-DBbjects can have the following types: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date]. All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
-
-Bool properties read from the database will be interpreted as follows: An integer 0 = false and any other number is true. For string values "1", "yes", "YES", "true", and "TRUE" evaluate to true.
+- DBbjects can have the following types saved and read to the DB: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date]. All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
+- Bool properties read from the database will be interpreted as follows: An integer 0 = false and any other number is true. For string values "1", "yes", "YES", "true", and "TRUE" evaluate to true.
 
 ### Protocol Definition ###
 ```swift
@@ -39,6 +39,16 @@ public protocol DBObject: Codable {
 */
 public init?(db: AgileDB, key: String)
 
+/**
+ Asynchronously instantiates object and populate with values from the database.
+
+ - parameter db: Database object holding the data.
+ - parameter key: Key of the data entry.
+ 
+ - throws: DBError
+*/
+public init(db: AgileDB, key: String) async throws
+
 
 /**
  Save the object's encoded values to the database.
@@ -50,6 +60,18 @@ public init?(db: AgileDB, key: String)
 */
 @discardableResult
 public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil) -> Bool
+
+
+/**
+ Asynchronously instantiate object and populate with values from the database.
+
+ - parameter db: Database object to hold the data.
+ - parameter key: Key of the data entry.
+
+ - returns: DBObject
+ - throws: DBError
+*/
+public static func loadFromDB(_ db: AgileDB, for key: String) -> Self?
 
 
 /**
@@ -384,6 +406,9 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+
+### 6.3 ###
+- Add async/await support
 
 ### 6.2 ###
 - New method: tableHasAllKeys and it's asynchronous equivilent
