@@ -159,59 +159,42 @@ class AsyncTests: XCTestCase {
 		waitForExpectations(timeout: 20, handler: nil)
 	}
 
-	func testAsyncTableKeys() {
-        let expectations = expectation(description: "tableKeys1")
-        expectations.expectedFulfillmentCount = 1
+    func testAwaitKeysInTable() async {
+        let table: DBTable = "asyncTable8"
+        db.dropTable(table)
+        db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
         
-		let table: DBTable = "asyncTable2"
-		db.dropTable(table)
-		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
-
-		db.keysInTable(table) { (results) in
-			if case .success(let rows) = results {
-				XCTAssert(rows.count == 5)
-			} else {
-				XCTFail()
-			}
-            expectations.fulfill()
-		}
+        do {
+            let rows = try await db.keysInTable(table)
+            XCTAssert(rows.count == 5)
+        } catch {
+            XCTFail()
+        }
+    }
+    
+    func testAwaitTableHasKey() async {
+        let table: DBTable = "asyncTable7"
+        db.dropTable(table)
+        db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
         
-        waitForExpectations(timeout: 20, handler: nil)
-	}
-
-	func testAsyncTableHasKey() {
-        let expectations = expectation(description: "tableKeys2")
-        expectations.expectedFulfillmentCount = 1
-
-		let table: DBTable = "asyncTable3"
-		db.dropTable(table)
-		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
-
-		db.tableHasKey(table: table, key: "testKey4") { (results) in
-			if case .success(let hasKey) = results {
-				XCTAssert(hasKey)
-			} else {
-				XCTFail()
-			}
-            expectations.fulfill()
-		}
-        
-        waitForExpectations(timeout: 20, handler: nil)
-	}
-
-    func testAsyncTableHasAllKeys() {
-        let expectations = expectation(description: "tableKeys3")
-        expectations.expectedFulfillmentCount = 2
-
-        let table: DBTable = "asyncTable3"
+        do {
+            let hasKey = try await db.tableHasKey(table: table, key: "testKey4")
+            XCTAssertTrue(hasKey)
+        } catch {
+            XCTFail()
+        }
+    }
+    
+    func testAwaitTableHasAllKeys() async {
+        let table: DBTable = "asyncTable6"
         db.dropTable(table)
         db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
         db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
@@ -219,52 +202,35 @@ class AsyncTests: XCTestCase {
         db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
         db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
 
-        db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"]) { (results) in
-            if case .success(let hasKeys) = results {
-                XCTAssertTrue(hasKeys)
-            } else {
-                XCTFail()
-            }
-            expectations.fulfill()
+        do {
+            var hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"])
+            XCTAssertTrue(hasKeys)
             
             self.db.deleteFromTable(table, for: "testKey4")
-            self.db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"]) { (results) in
-                if case .success(let hasKeys) = results {
-                    XCTAssertFalse(hasKeys)
-                } else {
-                    XCTFail()
-                }
-                expectations.fulfill()
-            }
+            hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"])
+            XCTAssertFalse(hasKeys)
+        } catch {
+            XCTFail()
         }
-        
-        waitForExpectations(timeout: 20, handler: nil)
     }
+    
+    func testAwaitValueFromTable() async {
+        let table: DBTable = "asyncTable5"
+        db.dropTable(table)
+        db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
+        db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
 
-	func testAsyncValues() {
-        let expectations = expectation(description: "tableKeys4")
-        expectations.expectedFulfillmentCount = 1
-        
-		let table: DBTable = "asyncTable4"
-		db.dropTable(table)
-		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
-		db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
-
-		db.valueFromTable(table, for: "testKey3") { (results) in
-			if case .success(let value) = results {
-                let jsonData = value.data(using: .utf8)!
-                let jsonObject: [String: Int] = try! JSONSerialization.jsonObject(with: jsonData, options: .mutableContainers) as! [String: Int]
-                XCTAssertTrue(jsonObject["numValue"] == 2)
-                XCTAssertTrue(jsonObject["value2"] == 3)
-			} else {
-				XCTFail()
-			}
-            expectations.fulfill()
-		}
-        
-        waitForExpectations(timeout: 20, handler: nil)
-	}
+        do {
+            let value = try await db.valueFromTable(table, for: "testKey3")
+            let jsonData = value.data(using: .utf8)!
+            let jsonObject: [String: Int] = try! JSONSerialization.jsonObject(with: jsonData, options: .mutableContainers) as! [String: Int]
+            XCTAssertTrue(jsonObject["numValue"] == 2)
+            XCTAssertTrue(jsonObject["value2"] == 3)
+        } catch {
+            XCTFail()
+        }
+    }
 }

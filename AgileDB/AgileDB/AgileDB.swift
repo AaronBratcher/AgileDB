@@ -218,6 +218,34 @@ public final class AgileDB {
         return nil
     }
     
+    /**
+    Asynchronously checks if the given table contains the given key.
+    
+    - parameter table: The table to search.
+    - parameter key: The key to look for.
+
+     - returns: Bool
+     - throws: DBError
+     */
+    
+    public func tableHasKey(table: DBTable, key: String) async throws -> Bool {
+        let results = await bridgingTableHasKey(table: table, key: key)
+        switch results {
+        case .success(let hasKey):
+            return hasKey
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    private func bridgingTableHasKey(table: DBTable, key: String) async -> BoolResults {
+        await withCheckedContinuation { continuation in
+            self.tableHasKey(table: table, key: key) { results in
+                continuation.resume(returning: results)
+            }
+        }
+    }
+    
 	/**
 	Asynchronously checks if the given table contains the given key.
 	
@@ -228,6 +256,7 @@ public final class AgileDB {
 	
 	- returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
 	*/
+    @available(*, deprecated, message: "Use await tableHasKey instead")
 	@discardableResult
 	public func tableHasKey(table: DBTable, key: String, queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
@@ -263,6 +292,34 @@ public final class AgileDB {
 
 		return DBCommandToken(database: self, identifier: blockReference)
 	}
+        
+    /**
+    Asynchronously checks if the given table contains the all the given keys.
+    
+    - parameter table: The table to search.
+    - parameter keys: The keys to look for.
+
+     - returns: Bool
+     - throws: DBError
+     */
+    
+    public func tableHasAllKeys(table: DBTable, keys: [String]) async throws -> Bool {
+        let results = await bridgingTableHasAllKeys(table: table, keys: keys)
+        switch results {
+        case .success(let hasKeys):
+            return hasKeys
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    private func bridgingTableHasAllKeys(table: DBTable, keys: [String]) async -> BoolResults {
+        await withCheckedContinuation { continuation in
+            self.tableHasAllKeys(table: table, keys: keys) { results in
+                continuation.resume(returning: results)
+            }
+        }
+    }
     
     /**
     Asynchronously checks if the given table contains all the given keys.
@@ -274,6 +331,7 @@ public final class AgileDB {
     
     - returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
     */
+    @available(*, deprecated, message: "Use await tableHasAllKeys instead")
     @discardableResult
     public func tableHasAllKeys(table: DBTable, keys: [String], queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
         let openResults = openDB()
@@ -349,6 +407,36 @@ public final class AgileDB {
 
 		return nil
 	}
+    
+    /**
+    Asynchronously keys in given table.
+    
+     - parameter table: The table to return keys from.
+     - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
+     - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
+     - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+
+     - returns: [String]
+     - throws: DBError
+     */
+    
+    public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> [String] {
+        let results = await bridgingKeysInTable(table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
+        switch results {
+        case .success(let keys):
+            return keys
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    private func bridgingKeysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async -> KeyResults {
+        await withCheckedContinuation { continuation in
+            self.keysInTable(table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects) { results in
+                continuation.resume(returning: results)
+            }
+        }
+    }
 
 	/**
 	Asynchronously returns the keys in the given table.
@@ -375,6 +463,7 @@ public final class AgileDB {
 	*/
 
 	@discardableResult
+    @available(*, deprecated, message: "Use await keysInTable instead")
 	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping (KeyResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults {
@@ -536,6 +625,35 @@ public final class AgileDB {
 
 		return nil
 	}
+    
+    /**
+     Asynchronously returns the value for a given table and key.
+    
+     - parameter table: The table to return keys from.
+     - parameter key: The key for the entry.
+
+     - returns: String
+     - throws: DBError
+     */
+    
+    public func valueFromTable(_ table: DBTable, for key: String) async throws -> String {
+        let results = await bridgingValueFromTable(table, for: key)
+        
+        switch results {
+        case .success(let value):
+            return value
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    private func bridgingValueFromTable(_ table: DBTable, for key: String) async -> JsonResults {
+        await withCheckedContinuation { continuation in
+            self.valueFromTable(table, for: key) { results in
+                continuation.resume(returning: results)
+            }
+        }
+    }
 
 	/**
 	Asynchronously returns the value for a given table and key.
@@ -551,6 +669,7 @@ public final class AgileDB {
 	
 	*/
 	@discardableResult
+    @available(*, deprecated, message: "Use await valueFromTable instead")
 	public func valueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (JsonResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults, !tables.hasTable(table) {
@@ -608,6 +727,35 @@ public final class AgileDB {
 	public func dictValueFromTable(_ table: DBTable, for key: String) -> [String: AnyObject]? {
 		return dictValueFromTable(table, for: key, includeDates: false)
 	}
+    
+    /**
+     Asynchronously returns the dictionary value of what was stored for a given table and key.
+    
+     - parameter table: The table to return keys from.
+     - parameter key: The key for the entry.
+
+     - returns: [String: AnyObject]
+     - throws: DBError
+     */
+    
+    public func dictValueFromTable(_ table: DBTable, for key: String) async throws -> [String: AnyObject] {
+        let results = await bridgingDictValueFromTable(table, for: key)
+        
+        switch results {
+        case .success(let value):
+            return value
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    private func bridgingDictValueFromTable(_ table: DBTable, for key: String) async -> DictResults {
+        await withCheckedContinuation { continuation in
+            self.dictValueFromTable(table, for: key) { results in
+                continuation.resume(returning: results)
+            }
+        }
+    }
 
 	/**
 	Returns the dictionary value of what was stored for a given table and key.
@@ -627,6 +775,7 @@ public final class AgileDB {
 	- returns: Returns a DBCommandToken that can be used to cancel the command before it executes. If the database file cannot be opened or table does not exist nil is returned.
 	*/
 	@discardableResult
+    @available(*, deprecated, message: "Use await dictValueFromTable instead")
 	public func dictValueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (DictResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults, !tables.hasTable(table) {
@@ -1879,7 +2028,44 @@ extension AgileDB {
 			return nil
 		}
 	}
+    
+    /**
+    Asynchronously runs a SQL command.
+    
+    - parameter sql: The `select` SQL command to run.
 
+     - returns: [DBRow]
+     - throws: DBError
+     */
+    
+    public func sqlSelect(_ sql: String) async throws -> [DBRow] {
+        let results = await bridgingSqlSelect(sql)
+        
+        switch results {
+        case .success(let value):
+            return value
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    private func bridgingSqlSelect(_ sql: String) async -> RowResults {
+        await withCheckedContinuation { continuation in
+            self.sqlSelect(sql) { results in
+                continuation.resume(returning: results)
+            }
+        }
+    }
+    
+    /**
+    Runs a SQL command and returns the results.
+    
+    - parameter sql: The `select` SQL command to run.
+
+     - returns: Result<[DBRow], DBError>
+     */
+    @available(*, deprecated, message: "Use await sqlSelect instead")
+    @discardableResult
 	public func sqlSelect(_ sql: String, queue: DispatchQueue? = nil, completion: @escaping (RowResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults {
@@ -2005,7 +2191,7 @@ private extension AgileDB {
 				return
 			}
 
-			_ = addBlock(block)
+			addBlock(block)
 		}
 
 		func close(automatically: Bool = false) {
@@ -2025,7 +2211,7 @@ private extension AgileDB {
 				self.sqliteDB = nil
 			}
 
-			_ = addBlock(block)
+			addBlock(block)
 		}
 
 		func lastID(_ completion: @escaping (_ lastInsertionID: sqlite3_int64) -> Void) {
@@ -2033,7 +2219,7 @@ private extension AgileDB {
 				completion(sqlite3_last_insert_rowid(self.sqliteDB))
 			}
 
-			_ = addBlock(block)
+			addBlock(block)
 		}
 
 		func sqlExecute(_ sql: String, completion: @escaping (_ success: Bool) -> Void) -> UInt {
@@ -2212,7 +2398,7 @@ private extension AgileDB {
 				return
 			}
 
-			_ = addBlock(block)
+			addBlock(block)
 		}
 
 		private func bindValue(_ statement: OpaquePointer, index: Int32, value: AnyObject) -> Int32 {
@@ -2266,7 +2452,8 @@ private extension AgileDB {
 			sqlite3_finalize(dbps)
 		}
 
-		private func addBlock(_ block: Any) -> UInt {
+		@discardableResult
+        private func addBlock(_ block: Any) -> UInt {
 			blockQueue.sync {
 				if blockReference > (UInt.max - 5) {
 					blockReference = 1

@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "AgileDB"
-  s.version      = "6.2.0"
+  s.version      = "6.3.0"
   s.summary      = "Save and retrieve full object graphs to SQLite"
   s.homepage	 = "https://github.com/AaronBratcher/AgileDB"
 
@@ -8,7 +8,7 @@ Pod::Spec.new do |s|
   s.author             = { "Aaron Bratcher" => "aaronlbratcher@yahoo.com" }
   s.social_media_url   = "http://twitter.com/AaronLBratcher"
 
-  s.swift_version = '5.2'
+  s.swift_version = '5.5'
   
   s.frameworks = 'Foundation'
   

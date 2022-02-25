@@ -98,6 +98,7 @@ public enum DBError: Error {
 	case damagedFile
 	case cannotOpenFile
 	case tableNotFound
+    case cannotParseData
 	case other(Int)
 }
 
@@ -111,6 +112,7 @@ extension DBError: RawRepresentable {
 		case 11: self = .damagedFile
 		case 14: self = .cannotOpenFile
 		case -1: self = .tableNotFound
+        case -2: self = .cannotParseData
 		default: self = .other(rawValue)
 		}
 	}
@@ -122,6 +124,7 @@ extension DBError: RawRepresentable {
 		case .damagedFile: return 11
 		case .cannotOpenFile: return 14
 		case .tableNotFound: return -1
+        case .cannotParseData: return -2
 		case .other(let value): return value
 		}
 	}
