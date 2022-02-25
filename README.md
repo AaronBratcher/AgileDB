@@ -288,7 +288,7 @@ let db = AgileDB.shared
 let table: DBTable = "categories"
 
 do {
-	let value = try db.valueFromTable(table, for: key)
+   let value = try await db.valueFromTable(table, for: key)
 	
 } catch {
 }
