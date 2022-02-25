@@ -103,9 +103,6 @@ do {
 	// use category
 } catch {
 }
-
-// token allows you to cancel the asynchronous call before completion
-
 ```
 
 ## DBResults Class
