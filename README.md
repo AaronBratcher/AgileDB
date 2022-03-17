@@ -3,7 +3,7 @@
 
 - A SQLite database wrapper written in Swift that requires no SQL knowledge to use.
 - No need to keep track of columns used in the database; it's automatic.
-- Completely thread safe since it uses it's own Thread subclass.
+- Completely thread safe since it uses its own Thread subclass.
 - Works with Async/Await
 - Use the publish method to work with Combine and SwiftUI
 
