@@ -99,8 +99,8 @@ guard let category = Category(db: db, key: categoryKey) else { return }
 
 // instantiate asynchronously
 do {
-	let category = try await Category.load(from: db, for: categoryKey)
-	// use category
+    let category = try await Category.load(from: db, for: categoryKey)
+    // use category
 } catch {
 }
 ```
