@@ -379,6 +379,7 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 
 ### 6.4 ###
 - Updated DBObject encoding to support additional property types
+- Converted project to proper Swift Package
 
 ### 6.3 ###
 - Minimum swift version updated to 5.5

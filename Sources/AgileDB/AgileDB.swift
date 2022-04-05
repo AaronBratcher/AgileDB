@@ -115,7 +115,7 @@ public final class AgileDB {
 	// MARK: - Init
 	/**
 	Instantiates an instance of AgileDB
-	
+
 	- parameter location: Optional file location if different than the default.
 	*/
 	public init(fileLocation: URL? = nil) {
@@ -126,9 +126,9 @@ public final class AgileDB {
 	// MARK: - Open / Close
 	/**
 	Opens the database file.
-	
+
 	- parameter location: Optional file location if different than the default.
-	
+
 	- returns: Bool Returns if the database could be successfully opened.
 	*/
 	public func open(_ location: URL? = nil) -> Bool {
@@ -164,10 +164,10 @@ public final class AgileDB {
 
 	/**
 	Checks if the given table contains the given key.
-	
+
 	- parameter table: The table to search.
 	- parameter key: The key to look for.
-	
+
 	- returns: Bool? Returns if the key exists in the table. Is nil when database could not be opened or other error occured.
 	*/
 	public func tableHasKey(table: DBTable, key: String) -> Bool? {
@@ -190,13 +190,13 @@ public final class AgileDB {
 	}
 
 	/**
-    Checks if the given table contains all the given key.s
-    
-    - parameter table: The table to search.
-    - parameter keys: The keys to look for.
-    
-    - returns: Bool? Returns if the key exists in the table. Is nil when database could not be opened or other error occured.
-    */
+	 Checks if the given table contains all the given key.s
+
+	 - parameter table: The table to search.
+	 - parameter keys: The keys to look for.
+
+	 - returns: Bool? Returns if the key exists in the table. Is nil when database could not be opened or other error occured.
+	 */
 	public func tableHasAllKeys(table: DBTable, keys: [String]) -> Bool? {
 		let openResults = openDB()
 		if case .failure(_) = openResults {
@@ -219,14 +219,14 @@ public final class AgileDB {
 	}
 
 	/**
-    Asynchronously checks if the given table contains the given key.
-    
-    - parameter table: The table to search.
-    - parameter key: The key to look for.
+	 Asynchronously checks if the given table contains the given key.
 
-     - returns: Bool
-     - throws: DBError
-     */
+	 - parameter table: The table to search.
+	 - parameter key: The key to look for.
+
+	  - returns: Bool
+	  - throws: DBError
+	  */
 
 	public func tableHasKey(table: DBTable, key: String) async throws -> Bool {
 		let results = await bridgingTableHasKey(table: table, key: key)
@@ -248,12 +248,12 @@ public final class AgileDB {
 
 	/**
 	Asynchronously checks if the given table contains the given key.
-	
+
 	- parameter table: The table to search.
 	- parameter key: The key to look for.
 	- parameter queue: Dispatch queue to use when running the completion closure. Default value is main queue.
 	- parameter completion: Closure to use for results.
-	
+
 	- returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
 	*/
 	@available(*, deprecated, message: "Use await tableHasKey instead")
@@ -294,14 +294,14 @@ public final class AgileDB {
 	}
 
 	/**
-    Asynchronously checks if the given table contains the all the given keys.
-    
-    - parameter table: The table to search.
-    - parameter keys: The keys to look for.
+	 Asynchronously checks if the given table contains the all the given keys.
 
-     - returns: Bool
-     - throws: DBError
-     */
+	 - parameter table: The table to search.
+	 - parameter keys: The keys to look for.
+
+	  - returns: Bool
+	  - throws: DBError
+	  */
 
 	public func tableHasAllKeys(table: DBTable, keys: [String]) async throws -> Bool {
 		let results = await bridgingTableHasAllKeys(table: table, keys: keys)
@@ -322,15 +322,15 @@ public final class AgileDB {
 	}
 
 	/**
-    Asynchronously checks if the given table contains all the given keys.
-    
-    - parameter table: The table to search.
-    - parameter keys: The keys to look for.
-    - parameter queue: Dispatch queue to use when running the completion closure. Default value is main queue.
-    - parameter completion: Closure to use for results.
-    
-    - returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
-    */
+	 Asynchronously checks if the given table contains all the given keys.
+
+	 - parameter table: The table to search.
+	 - parameter keys: The keys to look for.
+	 - parameter queue: Dispatch queue to use when running the completion closure. Default value is main queue.
+	 - parameter completion: Closure to use for results.
+
+	 - returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
+	 */
 	@available(*, deprecated, message: "Use await tableHasAllKeys instead")
 	@discardableResult
 	public func tableHasAllKeys(table: DBTable, keys: [String], queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
@@ -372,21 +372,21 @@ public final class AgileDB {
 
 	/**
 	Returns an array of keys from the given table sorted in the way specified matching the given conditions. All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
-	
+
 	Unsorted Example:
-	
+
 	let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
 	if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
 		// use keys
 	} else {
 		// handle error
 	}
-	
+
 	- parameter table: The DBTable to return keys from.
 	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 	- parameter conditions: Optional array of DBConditions that specify what conditions must be met.
 	- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
-	
+
 	- returns: [String]? Returns an array of keys from the table. Is nil when database could not be opened or other error occured.
 	*/
 	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> [String]? {
@@ -409,16 +409,16 @@ public final class AgileDB {
 	}
 
 	/**
-    Asynchronously keys in given table.
-    
-     - parameter table: The table to return keys from.
-     - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
-     - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-     - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+	 Asynchronously keys in given table.
 
-     - returns: [String]
-     - throws: DBError
-     */
+	  - parameter table: The table to return keys from.
+	  - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
+	  - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
+	  - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+
+	  - returns: [String]
+	  - throws: DBError
+	  */
 
 	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> [String] {
 		let results = await bridgingKeysInTable(table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
@@ -440,25 +440,25 @@ public final class AgileDB {
 
 	/**
 	Asynchronously returns the keys in the given table.
-	
+
 	Runs a query asynchronously and calls the completion closure with the results. Successful results are keys from the given table sorted in the way specified matching the given conditions. All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
-	
+
 	Unsorted Example:
-	
+
 	let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
 	if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
 		// use keys
 	} else {
 		// handle error
 	}
-	
+
 	- parameter table: The table to return keys from.
 	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 	- parameter conditions: Optional array of DBConditions that specify what conditions must be met.
 	- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
 	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
 	- parameter completion: Closure with DBRowResults.
-	
+
 	- returns: DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
 	*/
 
@@ -498,14 +498,14 @@ public final class AgileDB {
 	}
 
 	/**
-    Returns a  Publisher for generic DBResults. Uses the table of the DBObject for results.
+	 Returns a  Publisher for generic DBResults. Uses the table of the DBObject for results.
 
-    - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
-    - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-    - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+	 - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
+	 - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
+	 - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
 
-    - returns: DBResultssPublisher
-    */
+	 - returns: DBResultssPublisher
+	 */
 
 	@discardableResult
 	public func publisher<T>(sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> DBResultsPublisher<T> {
@@ -520,11 +520,11 @@ public final class AgileDB {
 	// MARK: - Indexing
 	/**
 	Sets the indexes desired for a given table.
-	
+
 	Example:
-	
+
 	AgileDB.setIndexesForTable(kTransactionsTable, to: ["accountKey","date"]) // index accountKey and date each individually
-	
+
 	- parameter table: The table to return keys from.
 	- parameter indexes: An array of table properties to be indexed. An array entry can be compound.
 	*/
@@ -543,18 +543,18 @@ public final class AgileDB {
 	// MARK: - Set Values
 	/**
 	Sets the value of an entry in the given table for a given key optionally deleted automatically after a given date. Supported values are dictionaries that consist of String, Int, Double and arrays of these. If more complex objects need to be stored, a string value of those objects need to be stored.
-	
+
 	Example:
-	
+
 	if !AgileDB.setValueInTable("table5", for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil) {
 		// handle error
 	}
-	
+
 	- parameter table: The table to return keys from.
 	- parameter key: The key for the entry.
 	- parameter value: A JSON string representing the value to be stored. Top level object provided must be a dictionary. If a key node is in the value, it will be ignored.
 	- parameter autoDeleteAfter: Optional date of when the value should be automatically deleted from the table.
-	
+
 	- returns: Bool If the value was set successfully.
 	*/
 	@discardableResult
@@ -603,17 +603,17 @@ public final class AgileDB {
 	// MARK: - Return Values
 	/**
 	Returns the JSON value of what was stored for a given table and key.
-	
+
 	Example:
 	if let jsonValue = AgileDB.valueFromTable("table1", for: "58D200A048F9") {
 		// process JSON text
 	} else {
 		// handle error
 	}
-	
+
 	- parameter table: The table to return keys from.
 	- parameter key: The key for the entry.
-	
+
 	- returns: JSON value of what was stored. Is nil when database could not be opened or other error occured.
 	*/
 	public func valueFromTable(_ table: DBTable, for key: String) -> String? {
@@ -627,14 +627,14 @@ public final class AgileDB {
 	}
 
 	/**
-     Asynchronously returns the value for a given table and key.
-    
-     - parameter table: The table to return keys from.
-     - parameter key: The key for the entry.
+	  Asynchronously returns the value for a given table and key.
 
-     - returns: String
-     - throws: DBError
-     */
+	  - parameter table: The table to return keys from.
+	  - parameter key: The key for the entry.
+
+	  - returns: String
+	  - throws: DBError
+	  */
 
 	public func valueFromTable(_ table: DBTable, for key: String) async throws -> String {
 		let results = await bridgingValueFromTable(table, for: key)
@@ -657,16 +657,16 @@ public final class AgileDB {
 
 	/**
 	Asynchronously returns the value for a given table and key.
-	
+
 	Runs a query asynchronously and calls the completion closure with the results. Successful result is a String.
-	
+
 	- parameter table: The table to return keys from.
 	- parameter key: The key for the entry.
 	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
 	- parameter completion: Closure to use for JSON results.
-	
+
 	- returns: Returns a DBCommandToken that can be used to cancel the command before it executes. If the database file cannot be opened or table does not exist nil is returned.
-	
+
 	*/
 	@discardableResult
 	@available(*, deprecated, message: "Use await valueFromTable instead")
@@ -711,17 +711,17 @@ public final class AgileDB {
 
 	/**
 	Returns the dictionary value of what was stored for a given table and key.
-	
+
 	Example:
 	if let dictValue = AgileDB.dictValueForKey(table: "table1", key: "58D200A048F9") {
 		// process dictionary
 	} else {
 		// handle error
 	}
-	
+
 	- parameter table: The table to return keys from.
 	- parameter key: The key for the entry.
-	
+
 	- returns: [String:AnyObject]? Dictionary value of what was stored. Is nil when database could not be opened or other error occured.
 	*/
 	public func dictValueFromTable(_ table: DBTable, for key: String) -> [String: AnyObject]? {
@@ -729,14 +729,14 @@ public final class AgileDB {
 	}
 
 	/**
-     Asynchronously returns the dictionary value of what was stored for a given table and key.
-    
-     - parameter table: The table to return keys from.
-     - parameter key: The key for the entry.
+	  Asynchronously returns the dictionary value of what was stored for a given table and key.
 
-     - returns: [String: AnyObject]
-     - throws: DBError
-     */
+	  - parameter table: The table to return keys from.
+	  - parameter key: The key for the entry.
+
+	  - returns: [String: AnyObject]
+	  - throws: DBError
+	  */
 
 	public func dictValueFromTable(_ table: DBTable, for key: String) async throws -> [String: AnyObject] {
 		let results = await bridgingDictValueFromTable(table, for: key)
@@ -759,19 +759,19 @@ public final class AgileDB {
 
 	/**
 	Returns the dictionary value of what was stored for a given table and key.
-	
+
 	Example:
 	if let dictValue = AgileDB.dictValueForKey(table: "table1", key: "58D200A048F9") {
 		// process dictionary
 	} else {
 		// handle error
 	}
-	
+
 	- parameter table: The table to return keys from.
 	- parameter key: The key for the entry.
 	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
 	- parameter completion: Closure to use for dictionary results.
-	
+
 	- returns: Returns a DBCommandToken that can be used to cancel the command before it executes. If the database file cannot be opened or table does not exist nil is returned.
 	*/
 	@discardableResult
@@ -816,10 +816,10 @@ public final class AgileDB {
 	// MARK: - Delete
 	/**
 	Delete the value from the given table for the given key.
-	
+
 	- parameter table: The table to return keys from.
 	- parameter key: The key for the entry.
-	
+
 	- returns: Bool Value was successfuly removed.
 	*/
 	@discardableResult
@@ -843,9 +843,9 @@ public final class AgileDB {
 
 	/**
 	Removes the given table and associated values.
-	
+
 	- parameter table: The table to return keys from.
-	
+
 	- returns: Bool Table was successfuly removed.
 	*/
 	@discardableResult
@@ -883,7 +883,7 @@ public final class AgileDB {
 
 	/**
 	Removes all tables and associated values.
-	
+
 	- returns: Bool Tables were successfuly removed.
 	*/
 	@discardableResult
@@ -922,7 +922,7 @@ public final class AgileDB {
 
 	/**
 	Enables syncing. Once enabled, a log is created for all current values in the tables.
-	
+
 	- returns: Bool If syncing was successfully enabled.
 	*/
 	public func enableSyncing() -> Bool {
@@ -956,7 +956,7 @@ public final class AgileDB {
 
 	/**
 	Disables syncing.
-	
+
 	- returns: Bool If syncing was successfully disabled.
 	*/
 	public func disableSyncing() -> Bool {
@@ -980,9 +980,9 @@ public final class AgileDB {
 
 	/**
 	Sets the tables that are not to be synced.
-	
+
 	- parameter tables: Array of tables that are not to be synced.
-	
+
 	- returns: Bool If list was set successfully.
 	*/
 	public func setUnsyncedTables(_ tables: [String]) -> Bool {
@@ -1007,11 +1007,11 @@ public final class AgileDB {
 
 	/**
 	Creates a sync file that can be used on another AgileDB instance to sync data. This is a synchronous call.
-	
+
 	- parameter filePath: The full path, including the file itself, to be used for the log file.
 	- parameter lastSequence: The last sequence used for the given target  Initial sequence is 0.
 	- parameter targetDBInstanceKey: The dbInstanceKey of the target database. Use the dbInstanceKey method to get the DB's instanceKey.
-	
+
 	- returns: (Bool,Int) If the file was successfully created and the lastSequence that should be used in subsequent calls to this instance for the given targetDBInstanceKey.
 	*/
 	public func createSyncFileAtURL(_ localURL: URL!, lastSequence: Int, targetDBInstanceKey: String) -> (Bool, Int) {
@@ -1093,10 +1093,10 @@ public final class AgileDB {
 
 	/**
 	Processes a sync file created by another instance of AgileDB. This is a synchronous call.
-	
+
 	- parameter filePath: The path to the sync file.
 	- parameter syncProgress: Optional function that will be called periodically giving the percent complete.
-	
+
 	- returns: (Bool,String,Int)  If the sync file was successfully processed,the instanceKey of the submiting DB, and the lastSequence that should be used in subsequent calls to the createSyncFile method of the instance that was used to create this file. If the database couldn't be opened or syncing hasn't been enabled, then the instanceKey will be empty and the lastSequence will be equal to zero.
 	*/
 	public typealias syncProgressUpdate = (_ percentComplete: Double) -> Void
@@ -1202,7 +1202,7 @@ public final class AgileDB {
 
 	/**
 	Replace single quotes with two single quotes for use in SQL commands.
-	
+
 	- returns: An escaped string.
 	*/
 	public func esc(_ source: String) -> String {
@@ -1211,9 +1211,9 @@ public final class AgileDB {
 
 	/**
 	String value for a given date.
-	
+
 	- parameter date: Date to get string value of
-	
+
 	- returns: String Date presented as a string
 	*/
 	public class func stringValueForDate(_ date: Date) -> String {
@@ -1222,9 +1222,9 @@ public final class AgileDB {
 
 	/**
 	Date value for given string
-	
+
 	- parameter stringValue: String representation of date given in ISO format "yyyy-MM-dd'T'HH:mm:ss'.'SSSZZZZZ"
-	
+
 	- returns: NSDate? Date value. Is nil if the string could not be converted to date.
 	*/
 	public class func dateValueForString(_ stringValue: String) -> Date? {
@@ -2030,13 +2030,13 @@ extension AgileDB {
 	}
 
 	/**
-    Asynchronously runs a SQL command.
-    
-    - parameter sql: The `select` SQL command to run.
+	 Asynchronously runs a SQL command.
 
-     - returns: [DBRow]
-     - throws: DBError
-     */
+	 - parameter sql: The `select` SQL command to run.
+
+	  - returns: [DBRow]
+	  - throws: DBError
+	  */
 
 	public func sqlSelect(_ sql: String) async throws -> [DBRow] {
 		let results = await bridgingSqlSelect(sql)
@@ -2058,12 +2058,12 @@ extension AgileDB {
 	}
 
 	/**
-    Runs a SQL command and returns the results.
-    
-    - parameter sql: The `select` SQL command to run.
+	 Runs a SQL command and returns the results.
 
-     - returns: Result<[DBRow], DBError>
-     */
+	 - parameter sql: The `select` SQL command to run.
+
+	  - returns: Result<[DBRow], DBError>
+	  */
 	@available(*, deprecated, message: "Use await sqlSelect instead")
 	@discardableResult
 	public func sqlSelect(_ sql: String, queue: DispatchQueue? = nil, completion: @escaping (RowResults) -> Void) -> DBCommandToken? {
@@ -2585,3 +2585,4 @@ fileprivate extension Array where Element: Equatable {
 		return !contains(element)
 	}
 }
+

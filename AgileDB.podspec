@@ -9,11 +9,15 @@ Pod::Spec.new do |s|
   s.social_media_url   = "http://twitter.com/AaronLBratcher"
 
   s.swift_version = '5.5'
+  s.ios.deployment_target = "13.0"
+  s.osx.deployment_target = "10.15"
+  s.watchos.deployment_target = "6.0" 
+  s.tvos.deployment_target = "13.0"
   
   s.frameworks = 'Foundation'
   
-  s.source				= { :git => "https://github.com/AaronBratcher/AgileDB.git", :tag => s.version }
-  s.source_files	= "AgileDB", "AgileDB/AgileDB/**/*.{h,m,swift}"
+  s.source			= { :git => "https://github.com/AaronBratcher/AgileDB.git", :tag => s.version }
+  s.source_files	= "AgileDB", "AgileDB/Sources/AgileDB/**/*.{h,m,swift}"
   
-  s.library				= "sqlite3"
+  s.library			= "sqlite3"
 end
