@@ -17,7 +17,7 @@ Pod::Spec.new do |s|
   s.frameworks = 'Foundation'
   
   s.source			= { :git => "https://github.com/AaronBratcher/AgileDB.git", :tag => s.version }
-  s.source_files	= "AgileDB", "AgileDB/Sources/AgileDB/**/*.{h,m,swift}"
+  s.source_files	= "AgileDB", "Sources/AgileDB/**/*.{h,m,swift}"
   
   s.library			= "sqlite3"
 end
