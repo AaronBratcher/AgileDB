@@ -36,7 +36,7 @@ class PublisherTests: XCTestCase {
 
 		var index = 0
 		let publisher: DBResultsPublisher<Transaction> = db.publisher()
-		let subscription = publisher.sink(receiveCompletion: { _ in }) { ( results) in
+		let subscription = publisher.sink(receiveCompletion: { _ in }) { (results) in
 			if index == 1 {
 				XCTAssertEqual(results.count, 9)
 			}
@@ -67,7 +67,7 @@ class PublisherTests: XCTestCase {
 		var index1 = 0
 		var index2 = 0
 		let publisher1: DBResultsPublisher<Transaction> = db.publisher(conditions: [account1Condition])
-		let subscription1 = publisher1.sink(receiveCompletion: { _ in }) { ( results) in
+		let subscription1 = publisher1.sink(receiveCompletion: { _ in }) { (results) in
 			if index1 == 1 {
 				XCTAssertEqual(results.count, 5)
 			}
@@ -84,7 +84,7 @@ class PublisherTests: XCTestCase {
 		}
 
 		let publisher2: DBResultsPublisher<Transaction> = db.publisher(conditions: [account2Condition])
-		let subscription2 = publisher2.sink(receiveCompletion: { _ in }) { ( results) in
+		let subscription2 = publisher2.sink(receiveCompletion: { _ in }) { (results) in
 			if index2 == 1 {
 				XCTAssertEqual(results.count, 4)
 			}

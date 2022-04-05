@@ -145,7 +145,7 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 		}
 
 		guard let stringValue = value as? String
-			, let intValue = Int(stringValue)
+		, let intValue = Int(stringValue)
 			else {
 			throw DictDecoderError.missingValueForKey(key.stringValue)
 		}
@@ -167,7 +167,7 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 			}
 
 			guard let stringValue = value as? String
-				, let intValue = Int(stringValue)
+			, let intValue = Int(stringValue)
 				else { throw DictDecoderError.missingValueForKey(key.stringValue) }
 
 			intValues.append(intValue)
@@ -186,7 +186,7 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 		}
 
 		guard let stringValue = value as? String
-			, let doubleValue = Double(stringValue)
+		, let doubleValue = Double(stringValue)
 			else {
 			throw DictDecoderError.missingValueForKey(key.stringValue)
 		}
@@ -208,7 +208,7 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 			}
 
 			guard let stringValue = value as? String
-				, let doubleValue = Double(stringValue)
+			, let doubleValue = Double(stringValue)
 				else { throw DictDecoderError.missingValueForKey(key.stringValue) }
 
 			doubleValues.append(doubleValue)

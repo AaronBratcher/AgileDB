@@ -161,33 +161,33 @@ class BasicTests: XCTestCase {
 		} else {
 			XCTAssert(false, "bool not returned")
 		}
-        db.dropTable(table)
+		db.dropTable(table)
 	}
-    
-    func testTableHasAllKeys() {
-        let table: DBTable = "table0"
-        let sample = "{\"numValue\":2,\"arrayValue\":[6,7,8,9,10]}"
 
-        db.setValueInTable(table, for: "testKey1", to: sample, autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey2", to: sample, autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey3", to: sample, autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey4", to: sample, autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey5", to: sample, autoDeleteAfter: nil)
+	func testTableHasAllKeys() {
+		let table: DBTable = "table0"
+		let sample = "{\"numValue\":2,\"arrayValue\":[6,7,8,9,10]}"
 
-        if let hasKeys = db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"]) {
-            XCTAssertTrue(hasKeys, "invalid test result")
-        } else {
-            XCTAssert(false, "bool not returned")
-        }
-        
-        db.deleteFromTable(table, for: "testKey1")
-        if let hasKeys = db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"]) {
-            XCTAssertFalse(hasKeys, "invalid test result")
-        } else {
-            XCTAssert(false, "bool not returned")
-        }
+		db.setValueInTable(table, for: "testKey1", to: sample, autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey2", to: sample, autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey3", to: sample, autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey4", to: sample, autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey5", to: sample, autoDeleteAfter: nil)
 
-    }
+		if let hasKeys = db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3", "testKey4", "testKey5"]) {
+			XCTAssertTrue(hasKeys, "invalid test result")
+		} else {
+			XCTAssert(false, "bool not returned")
+		}
+
+		db.deleteFromTable(table, for: "testKey1")
+		if let hasKeys = db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3", "testKey4", "testKey5"]) {
+			XCTAssertFalse(hasKeys, "invalid test result")
+		} else {
+			XCTAssert(false, "bool not returned")
+		}
+
+	}
 
 	func testKeyFetch() {
 		let table: DBTable = "table2"
@@ -333,5 +333,5 @@ class BasicTests: XCTestCase {
 
 func delay(_ seconds: Double, closure: @escaping () -> Void) {
 	DispatchQueue.main.asyncAfter(
-	                              deadline: DispatchTime.now() + Double(Int64(seconds * Double(NSEC_PER_SEC))) / Double(NSEC_PER_SEC), execute: closure)
+		deadline: DispatchTime.now() + Double(Int64(seconds * Double(NSEC_PER_SEC))) / Double(NSEC_PER_SEC), execute: closure)
 }

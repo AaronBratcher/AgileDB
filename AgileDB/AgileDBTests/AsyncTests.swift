@@ -159,78 +159,78 @@ class AsyncTests: XCTestCase {
 		waitForExpectations(timeout: 20, handler: nil)
 	}
 
-    func testAwaitKeysInTable() async {
-        let table: DBTable = "asyncTable8"
-        db.dropTable(table)
-        db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
-        
-        do {
-            let rows = try await db.keysInTable(table)
-            XCTAssert(rows.count == 5)
-        } catch {
-            XCTFail()
-        }
-    }
-    
-    func testAwaitTableHasKey() async {
-        let table: DBTable = "asyncTable7"
-        db.dropTable(table)
-        db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
-        
-        do {
-            let hasKey = try await db.tableHasKey(table: table, key: "testKey4")
-            XCTAssertTrue(hasKey)
-        } catch {
-            XCTFail()
-        }
-    }
-    
-    func testAwaitTableHasAllKeys() async {
-        let table: DBTable = "asyncTable6"
-        db.dropTable(table)
-        db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
+	func testAwaitKeysInTable() async {
+		let table: DBTable = "asyncTable8"
+		db.dropTable(table)
+		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
 
-        do {
-            var hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"])
-            XCTAssertTrue(hasKeys)
-            
-            self.db.deleteFromTable(table, for: "testKey4")
-            hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1","testKey2","testKey3","testKey4","testKey5"])
-            XCTAssertFalse(hasKeys)
-        } catch {
-            XCTFail()
-        }
-    }
-    
-    func testAwaitValueFromTable() async {
-        let table: DBTable = "asyncTable5"
-        db.dropTable(table)
-        db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
-        db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
+		do {
+			let rows = try await db.keysInTable(table)
+			XCTAssert(rows.count == 5)
+		} catch {
+			XCTFail()
+		}
+	}
 
-        do {
-            let value = try await db.valueFromTable(table, for: "testKey3")
-            let jsonData = value.data(using: .utf8)!
-            let jsonObject: [String: Int] = try! JSONSerialization.jsonObject(with: jsonData, options: .mutableContainers) as! [String: Int]
-            XCTAssertTrue(jsonObject["numValue"] == 2)
-            XCTAssertTrue(jsonObject["value2"] == 3)
-        } catch {
-            XCTFail()
-        }
-    }
+	func testAwaitTableHasKey() async {
+		let table: DBTable = "asyncTable7"
+		db.dropTable(table)
+		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
+
+		do {
+			let hasKey = try await db.tableHasKey(table: table, key: "testKey4")
+			XCTAssertTrue(hasKey)
+		} catch {
+			XCTFail()
+		}
+	}
+
+	func testAwaitTableHasAllKeys() async {
+		let table: DBTable = "asyncTable6"
+		db.dropTable(table)
+		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
+
+		do {
+			var hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3", "testKey4", "testKey5"])
+			XCTAssertTrue(hasKeys)
+
+			self.db.deleteFromTable(table, for: "testKey4")
+			hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3", "testKey4", "testKey5"])
+			XCTAssertFalse(hasKeys)
+		} catch {
+			XCTFail()
+		}
+	}
+
+	func testAwaitValueFromTable() async {
+		let table: DBTable = "asyncTable5"
+		db.dropTable(table)
+		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":3,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":2,\"value2\":3}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
+		db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
+
+		do {
+			let value = try await db.valueFromTable(table, for: "testKey3")
+			let jsonData = value.data(using: .utf8)!
+			let jsonObject: [String: Int] = try! JSONSerialization.jsonObject(with: jsonData, options: .mutableContainers) as! [String: Int]
+			XCTAssertTrue(jsonObject["numValue"] == 2)
+			XCTAssertTrue(jsonObject["value2"] == 3)
+		} catch {
+			XCTFail()
+		}
+	}
 }

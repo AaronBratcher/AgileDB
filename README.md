@@ -18,7 +18,7 @@
 - For any method that returns an optional, that value is nil if an error occured and could not return a proper value.
 
 ## DBObject Protocol ##
-- DBbjects can have the following types saved and read to the DB: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date]. All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
+- DBbjects can have the following types saved and read to the DB: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date], Dictionary, [Dictionary] Codable Struct, [Codable Struct] (Dictionary and Struct and array alternatives saved as JSON text in DB column). All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
 - Bool properties read from the database will be interpreted as follows: An integer 0 = false and any other number is true. For string values "1", "yes", "YES", "true", and "TRUE" evaluate to true.
 
 ### Protocol Definition ###
@@ -376,6 +376,9 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+
+### 6.4 ###
+- Enhanced DBObject property to support additional types
 
 ### 6.3 ###
 - Minimum swift version updated to 5.5
