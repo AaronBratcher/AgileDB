@@ -26,11 +26,11 @@ func pathForDB(className: String) -> String {
 }
 
 func removeDB(for className: String) {
-    let path = pathForDB(className: className)
-    let fileExists = FileManager.default.fileExists(atPath: path)
-    if fileExists {
-        try? FileManager.default.removeItem(atPath: path)
-    }
+	let path = pathForDB(className: className)
+	let fileExists = FileManager.default.fileExists(atPath: path)
+	if fileExists {
+		try? FileManager.default.removeItem(atPath: path)
+	}
 }
 
 class SyncTests: XCTestCase {
@@ -46,8 +46,8 @@ class SyncTests: XCTestCase {
 	override func tearDownWithError() throws {
 		// Put teardown code here. This method is called after the invocation of each test method in the class.
 		super.tearDown()
-        db.close()
-        removeDB(for: String(describing: type(of: self)))
+		db.close()
+		removeDB(for: String(describing: type(of: self)))
 	}
 
 	func testEnableSyncing() {
@@ -199,7 +199,7 @@ class SyncTests: XCTestCase {
 			XCTAssert(results, "sync log not processed")
 
 			// check for proper changes
-            XCTAssert(!db.tableHasKey(table: DBTable(name: "table8"), key: "testKey1")!, "table8 still has entry")
+			XCTAssert(!db.tableHasKey(table: DBTable(name: "table8"), key: "testKey1")!, "table8 still has entry")
 
 			XCTAssert(!db.tableHasKey(table: DBTable(name: "table9"), key: "testKey2")!, "drop table 9 failed")
 			XCTAssert(!db.tableHasKey(table: DBTable(name: "table9"), key: "testKey3")!, "drop table 9 failed")

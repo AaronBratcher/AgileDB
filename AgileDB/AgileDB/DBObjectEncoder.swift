@@ -143,7 +143,11 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 		} else if let value = value as? [DBObject] {
 			try encodeDBObjectArray(value, forKey: key)
 		} else {
-			try encode(value, forKey: key)
+			let jsonData = try JSONEncoder().encode(value)
+			guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+				throw EncodingError.invalidValue(value, EncodingError.Context.init(codingPath: [key], debugDescription: "Cannot convert to JSON for storage"))
+			}
+			try encode(jsonString, forKey: key)
 		}
 	}
 
