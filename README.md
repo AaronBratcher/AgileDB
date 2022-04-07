@@ -18,7 +18,7 @@
 - For any method that returns an optional, that value is nil if an error occured and could not return a proper value.
 
 ## DBObject Protocol ##
-- DBbjects can have the following types saved and read to the DB: DBObject, Int, Double, String, Date, Bool, [DBObject], [Int], [Double], [String], [Date], Dictionary, [Dictionary] Codable Struct, [Codable Struct] (Dictionary and Struct and array alternatives saved as JSON text in DB column). All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
+- DBbjects can have the following types saved and read to the DB: DBObject, Int, Double, String, Date, Bool, Dictionary, Codable Struct [DBObject], [Int], [Double], [String], [Date], [Dictionary], [Codable Struct] (Dictionary and Struct and array alternatives saved as JSON text in DB column). All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
 - Bool properties read from the database will be interpreted as follows: An integer 0 = false and any other number is true. For string values "1", "yes", "YES", "true", and "TRUE" evaluate to true.
 
 ### Protocol Definition ###
@@ -32,7 +32,7 @@ public protocol DBObject: Codable {
 ### Protocol methods ###
 ```swift
 /**
- Instantiate object and populate with values from the database. If instantiation fails, nil is returned.
+ Instantiate object and populate with values from the database, recursively if necessary. If instantiation fails, nil is returned.
 
  - parameter db: Database object holding the data.
  - parameter key: Key of the data entry.
@@ -378,12 +378,12 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 # Revision History
 
 ### 6.4 ###
-- Updated DBObject encoding to support additional property types
+- Updated DBObject encoding to support Dictonary, Codable Struct, [Dictionary], and [Codable Struct]
 - Converted project to proper Swift Package
 
 ### 6.3 ###
 - Minimum swift version updated to 5.5
-- Add async/await support
+- Added async/await support
 
 ### 6.2 ###
 - New method: tableHasAllKeys and it's asynchronous equivilent
