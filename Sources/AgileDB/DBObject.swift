@@ -29,6 +29,21 @@ extension DBObject {
 	}
 
 	/**
+	Asynchly instantiate object and populate with values from the database. If instantiation fails, nil is returned.
+
+	- parameter db: Database object holding the data.
+	- parameter key: Key of the data entry.
+	*/
+	public init?(db: AgileDB, key: String) async {
+		guard let dictionaryValue = try? await db.dictValueFromTable(Self.table, for: key)
+		, let dbObject: Self = Self.dbObjectWithDict(dictionaryValue, db: db, for: key)
+			else { return nil }
+
+		self = dbObject
+	}
+
+
+	/**
 	Save the object to the database. This will update the values in the database if the object is already present. At this time, this is not an atomic operation for nested Objects.
 
 	- parameter db: Database object to hold the data.
@@ -62,6 +77,39 @@ extension DBObject {
 	}
 
 	/**
+	Asynchronously save the object to the database. This will update the values in the database if the object is already present. At this time, this is not an atomic operation for nested Objects.
+
+	- parameter db: Database object to hold the data.
+	- parameter expiration: Optional Date specifying when the data is to be automatically deleted. Default value is nil specifying no automatic deletion.
+	- parameter saveNestedObjects: Save nested DBObjects and arrays of DBObjects. (autoDeleteAfter is not propegated to nested objects saves) Default value is true.
+
+	*/
+	@discardableResult
+	public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil, saveNestedObjects: Bool = true) async -> Bool {
+		if saveNestedObjects {
+			let mirror = Mirror(reflecting: self)
+			for child in mirror.children {
+				if let dbObject = child.value as? DBObject {
+					await dbObject.save(to: db)
+				}
+
+				if let objectArray = child.value as? [DBObject] {
+					for dbObject in objectArray {
+						await dbObject.save(to: db)
+					}
+				}
+			}
+		}
+
+		guard let dictValue = dictValue
+		, db.setValueInTable(Self.table, for: key, to: dictValue, autoDeleteAfter: expiration)
+			else { return false }
+
+		return true
+	}
+
+
+	/**
 	Remove the object from the database
 
 	- parameter db: Database object that holds the data. This does not delete nested objects.
@@ -71,6 +119,18 @@ extension DBObject {
 	@discardableResult
 	public func delete(from db: AgileDB) -> Bool {
 		return db.deleteFromTable(Self.table, for: key)
+	}
+
+	/**
+	Asynchronously remove the object from the database
+
+	- parameter db: Database object that holds the data. This does not delete nested objects.
+
+	- returns: Discardable Bool value of a successful deletion.
+	*/
+	@discardableResult
+	public func delete(from db: AgileDB) async -> Bool {
+		return await db.deleteFromTable(Self.table, for: key)
 	}
 
 	/**

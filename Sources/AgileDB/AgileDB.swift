@@ -842,6 +842,32 @@ public final class AgileDB {
 	}
 
 	/**
+	Asynchronously delete the value from the given table for the given key.
+
+	- parameter table: The table to return keys from.
+	- parameter key: The key for the entry.
+
+	- returns: Bool Value was successfuly removed.
+	*/
+	@discardableResult
+	public func deleteFromTable(_ table: DBTable, for key: String) async -> Bool {
+		assert(key != "", "key must be provided")
+
+		return publisherQueue.sync { () -> Bool in
+			let publishers = publishersContaining(key: key, in: table)
+
+			let successful = deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
+			if successful {
+				for publisher in publishers {
+					publisher.updateSubject()
+				}
+			}
+
+			return successful
+		}
+	}
+
+	/**
 	Removes the given table and associated values.
 
 	- parameter table: The table to return keys from.

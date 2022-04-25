@@ -123,14 +123,14 @@ class DBObjectTests: XCTestCase {
 		removeDB(for: String(describing: type(of: self)))
 	}
 
-	func testSaveObject() throws {
+	func testSaveObject() async throws {
 		let date: Date = { Date() }()
 		let purchaseDates = [date, date, date]
 
 		let transaction = Transaction(key: TransactionValue.key, date: date, accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, purchaseOrders: TransactionValue.purchaseOrders, purchaseDates: purchaseDates, isNew: TransactionValue.isNew)
-		transaction.save(to: db)
+		await transaction.save(to: db)
 
-		guard let testTransaction = Transaction.init(db: db, key: TransactionValue.key) else { XCTFail(); return }
+		guard let testTransaction = await Transaction.init(db: db, key: TransactionValue.key) else { XCTFail(); return }
 
 		let dateCompare = Calendar(identifier: .gregorian).compare(date, to: testTransaction.date, toGranularity: .nanosecond)
 		let dateCompare0 = Calendar(identifier: .gregorian).compare(date, to: testTransaction.purchaseDates![0], toGranularity: .nanosecond)
@@ -154,7 +154,7 @@ class DBObjectTests: XCTestCase {
 		let addresses = [address, address]
 
 		var addressHolder = AddressHolder(using: address, addresses: nil)
-		addressHolder.save(to: db)
+		await addressHolder.save(to: db)
 
 		let newHolder = try await AddressHolder.load(from: db, for: addressHolder.key)
 		XCTAssertEqual(newHolder.address, address)
@@ -162,7 +162,7 @@ class DBObjectTests: XCTestCase {
 		XCTAssertEqual(newHolder.authors, addressHolder.authors)
 
 		addressHolder = AddressHolder(using: address, addresses: addresses)
-		addressHolder.save(to: db)
+		await addressHolder.save(to: db)
 
 		let newHolder2 = try await AddressHolder.load(from: db, for: addressHolder.key)
 		XCTAssertEqual(newHolder2.address, address)
@@ -171,33 +171,29 @@ class DBObjectTests: XCTestCase {
 		XCTAssertEqual(newHolder.authors, addressHolder.authors)
 	}
 
-	func testSaveNilValue() throws {
+	func testSaveNilValue() async throws {
 		let date = Date()
 		let transaction = Transaction(key: TransactionValue.key, date: date, accountKey: TransactionValue.accountKey, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
-		transaction.save(to: db)
+		await transaction.save(to: db)
 
-		guard let testTransaction = Transaction.init(db: db, key: TransactionValue.key) else { XCTFail(); return }
+		guard let testTransaction = await Transaction.init(db: db, key: TransactionValue.key) else { XCTFail(); return }
 
 		XCTAssertNil(testTransaction.notes)
 	}
 
-	func testAsyncObject() throws {
+	func testAsyncObject() async throws {
 		let transaction = Transaction(key: TransactionValue.key, date: Date(), accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
-		transaction.save(to: db)
+		await transaction.save(to: db)
 
-		let expectations = expectation(description: "DBObject Expectations")
-		expectations.expectedFulfillmentCount = 1
 
-		Transaction.loadObjectFromDB(db, for: TransactionValue.key) { (_) in
-			expectations.fulfill()
-		}
-
-		waitForExpectations(timeout: 2, handler: nil)
+		let transaction2 = try await Transaction.load(from: db, for: TransactionValue.key)
+		XCTAssertEqual(transaction2.key, TransactionValue.key)
+		XCTAssertEqual(transaction2.accountKey, TransactionValue.accountKey)
 	}
 
 	func testLoadFromDB() async throws {
 		let transaction = Transaction(key: TransactionValue.key, date: Date(), accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
-		transaction.save(to: db)
+		await transaction.save(to: db)
 
 		do {
 			let object = try await Transaction.load(from: db, for: TransactionValue.key)
@@ -208,13 +204,14 @@ class DBObjectTests: XCTestCase {
 		}
 	}
 
-	func testNestedSave() throws {
+	func testNestedSave() async throws {
 		let transaction = EncodingTransaction()
-		transaction.save(to: db)
+		await transaction.save(to: db)
 
-		let loadedTransaction = try XCTUnwrap(EncodingTransaction(db: db, key: transaction.key))
-		XCTAssertEqual(transaction.amount, loadedTransaction.amount)
-		XCTAssertEqual(loadedTransaction.locations.count, 3)
-		XCTAssertEqual(loadedTransaction.locations[0].manager.firstName, "Store")
+		let loadedTransaction = await EncodingTransaction(db: db, key: transaction.key)
+		let encodingTransaction = try XCTUnwrap(loadedTransaction)
+		XCTAssertEqual(transaction.amount, encodingTransaction.amount)
+		XCTAssertEqual(encodingTransaction.locations.count, 3)
+		XCTAssertEqual(encodingTransaction.locations[0].manager.firstName, "Store")
 	}
 }

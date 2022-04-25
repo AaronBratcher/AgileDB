@@ -193,7 +193,7 @@ class AsyncTests: XCTestCase {
 		}
 	}
 
-	func testAwaitTableHasAllKeys() async {
+	func testAwaitTableHasAllKeys() {
 		let table: DBTable = "asyncTable6"
 		db.dropTable(table)
 		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":2,\"value2\":1}", autoDeleteAfter: nil)
@@ -202,16 +202,12 @@ class AsyncTests: XCTestCase {
 		db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":1,\"value2\":1}", autoDeleteAfter: nil)
 		db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":2,\"value2\":2}", autoDeleteAfter: nil)
 
-		do {
-			var hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3", "testKey4", "testKey5"])
-			XCTAssertTrue(hasKeys)
+		var hasKeys = db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3", "testKey4", "testKey5"]) ?? false
+		XCTAssertTrue(hasKeys)
 
-			self.db.deleteFromTable(table, for: "testKey4")
-			hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3", "testKey4", "testKey5"])
-			XCTAssertFalse(hasKeys)
-		} catch {
-			XCTFail()
-		}
+		self.db.deleteFromTable(table, for: "testKey4")
+		hasKeys = db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3", "testKey4", "testKey5"]) ?? false
+		XCTAssertFalse(hasKeys)
 	}
 
 	func testAwaitValueFromTable() async {

@@ -28,18 +28,18 @@ class DBResultsTests: XCTestCase {
 	}
 
 
-	func testDBResults() throws {
+	func testDBResults() async throws {
 		let date = Date()
 		let keys = ["1", "2", "3"]
 
 		var transaction = Transaction(key: keys[0], date: date, accountKey: "A1", notes: TransactionValue.notes, amount: TransactionValue.amount, purchaseOrders: TransactionValue.purchaseOrders, isNew: TransactionValue.isNew)
-		transaction.save(to: db)
+		await transaction.save(to: db)
 
 		transaction = Transaction(key: keys[1], date: date, accountKey: "A2", notes: TransactionValue.notes, amount: TransactionValue.amount, purchaseOrders: TransactionValue.purchaseOrders, isNew: TransactionValue.isNew)
-		transaction.save(to: db)
+		await transaction.save(to: db)
 
 		transaction = Transaction(key: keys[2], date: date, accountKey: "A3", notes: TransactionValue.notes, amount: TransactionValue.amount, purchaseOrders: TransactionValue.purchaseOrders, isNew: TransactionValue.isNew)
-		transaction.save(to: db)
+		await transaction.save(to: db)
 
 		let transactions = DBResults<Transaction>(db: db, keys: keys)
 		XCTAssertEqual(transactions.count, 3)

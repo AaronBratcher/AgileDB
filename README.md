@@ -364,7 +364,7 @@ public func createSyncFileAtURL(_ localURL: URL!, lastSequence: Int, targetDBIns
 
 
 /**
-Processes a sync file created by another instance of ALBNoSQL This is a synchronous call.
+Processes a sync file created by another instance of AgileDB This is a synchronous call.
 
 - parameter filePath: The path to the sync file.
 - parameter syncProgress: Optional function that will be called periodically giving the percent complete.
@@ -376,6 +376,8 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+### 6.5 ###
+- All DBObject methods have async/await counterparts 
 
 ### 6.4 ###
 - Updated DBObject encoding to support Dictonary, Codable Struct, [Dictionary], and [Codable Struct]
