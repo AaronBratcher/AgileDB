@@ -37,7 +37,7 @@ public protocol DBObject: Codable {
  - parameter db: Database object holding the data.
  - parameter key: Key of the data entry.
 */
-public init?(db: AgileDB, key: String)
+public init?(db: AgileDB, key: String) async
 
 /**
  Save the object's encoded values to the database.
@@ -48,7 +48,7 @@ public init?(db: AgileDB, key: String)
  - returns: Discardable Bool value of a successful save.
 */
 @discardableResult
-public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil) -> Bool
+public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil) async -> Bool
 
 /**
  Remove the object from the database
@@ -56,7 +56,7 @@ public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil) -> Boo
  - parameter db: Database object that holds the data. This does not delete nested objects.
  - returns: Discardable Bool value of a successful deletion.
 */
-public func delete(from db: AgileDB) -> Bool
+public func delete(from db: AgileDB) async -> Bool
 
 /**
  Asynchronously instantiate object and populate with values from the database, recursively if necessary.
