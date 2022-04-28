@@ -191,6 +191,15 @@ class DBObjectTests: XCTestCase {
 		XCTAssertEqual(transaction2.accountKey, TransactionValue.accountKey)
 	}
 
+	func testDelete() async throws {
+		let transaction = Transaction(key: TransactionValue.key, date: Date(), accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
+		await transaction.save(to: db)
+		await transaction.delete(from: db)
+		let hasKey = try await db.tableHasKey(table: Transaction.table, key: TransactionValue.key)
+
+		XCTAssertFalse(hasKey)
+	}
+
 	func testLoadFromDB() async throws {
 		let transaction = Transaction(key: TransactionValue.key, date: Date(), accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
 		await transaction.save(to: db)

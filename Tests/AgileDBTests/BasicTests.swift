@@ -162,6 +162,8 @@ class BasicTests: XCTestCase {
 			XCTAssert(false, "bool not returned")
 		}
 		db.dropTable(table)
+
+		XCTAssertFalse(db.hasTable(table))
 	}
 
 	func testTableHasAllKeys() {

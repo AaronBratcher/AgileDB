@@ -94,15 +94,12 @@ category.save(to: db)
 // save to database, automatically delete after designated date
 category.save(to: db, autoDeleteAfter: deletionDate)
 
-// instantiate synchronously
-guard let category = Category(db: db, key: categoryKey) else { return }
+// instantiate and pull from DB asynchronously
+guard let category = await Category(db: db, key: categoryKey) else { return }
 
-// instantiate asynchronously
-do {
-    let category = try await Category.load(from: db, for: categoryKey)
-    // use category
-} catch {
-}
+// delete from DB
+category.delete(from: db)
+
 ```
 
 ## DBResults Class

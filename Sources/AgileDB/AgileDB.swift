@@ -48,7 +48,7 @@ public final class AgileDB {
 	/**
 	Read-only array of unsynced tables.  Any tables not in this array will be synced.
 	*/
-	private(set) public var unsyncedTables: [String] = []
+	private(set) public var unsyncedTables: [DBTable] = []
 
 	public static var dateFormatter: DateFormatter = {
 		let dateFormatter = DateFormatter()
@@ -131,6 +131,7 @@ public final class AgileDB {
 
 	- returns: Bool Returns if the database could be successfully opened.
 	*/
+	@discardableResult
 	public func open(_ location: URL? = nil) -> Bool {
 		let dbFileLocation = location ?? self.dbFileLocation ?? URL(fileURLWithPath: defaultFileLocation())
 		// if we already have a db file open at a different location, close it first
@@ -889,7 +890,7 @@ public final class AgileDB {
 
 		tables.dropTable(table)
 
-		if syncingEnabled && unsyncedTables.doesNotContain(table.name) {
+		if syncingEnabled && unsyncedTables.doesNotContain(table) {
 			let now = AgileDB.stringValueForDate(Date())
 			if !sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(dbInstanceKey)','\(dbInstanceKey)','\(table)','X',NULL)") {
 				return false
@@ -1011,7 +1012,8 @@ public final class AgileDB {
 
 	- returns: Bool If list was set successfully.
 	*/
-	public func setUnsyncedTables(_ tables: [String]) -> Bool {
+	@discardableResult
+	public func setUnsyncedTables(_ tables: [DBTable]) -> Bool {
 		let openResults = openDB()
 		if case .failure(_) = openResults {
 			return false
@@ -1022,10 +1024,10 @@ public final class AgileDB {
 			return false
 		}
 
-		unsyncedTables = [String]()
-		for tableName in tables {
-			sqlExecute("delete from __synclog where tableName = '\(tableName)'")
-			unsyncedTables.append(tableName)
+		unsyncedTables = [DBTable]()
+		for table in tables {
+			sqlExecute("delete from __synclog where tableName = '\(table)'")
+			unsyncedTables.append(table)
 		}
 
 		return true
@@ -1215,6 +1217,17 @@ public final class AgileDB {
 
 	// MARK: - Misc
 	/**
+	 Check for the existance of a given table
+	 - parameter table: The table to check the existence of
+
+	 - returns: the existence of a specified table
+	 */
+	public func hasTable(_ table: DBTable) -> Bool {
+		return tables.hasTable(table)
+	}
+
+
+	/**
 	The instanceKey for this database instance. Each AgileDB database is created with a unique instanceKey. Is nil when database could not be opened.
 	*/
 	public var instanceKey: String? {
@@ -1337,10 +1350,10 @@ public final class AgileDB {
 		}
 
 		if syncingEnabled {
-			unsyncedTables = [String]()
+			unsyncedTables = [DBTable]()
 			let unsyncedTables = sqlSelect("select tableName from __unsyncedTables")
 			if let unsyncedTables = unsyncedTables {
-				self.unsyncedTables = unsyncedTables.map({ $0.values[0] as! String })
+				self.unsyncedTables = unsyncedTables.map({ $0.values[0] as! DBTable })
 			}
 		}
 
@@ -1653,7 +1666,7 @@ extension AgileDB {
 			}
 		}
 
-		if syncingEnabled && unsyncedTables.doesNotContain(table.name) {
+		if syncingEnabled && unsyncedTables.doesNotContain(table) {
 			let now = AgileDB.stringValueForDate(Date())
 			sql = "insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(table)','U','\(esc(key))')"
 
@@ -1728,7 +1741,7 @@ extension AgileDB {
 		}
 
 		let now = AgileDB.stringValueForDate(Date())
-		if syncingEnabled && unsyncedTables.doesNotContain(table.name) {
+		if syncingEnabled && unsyncedTables.doesNotContain(table) {
 			var sql = ""
 			// auto-deleted entries will be automatically removed from any other databases too. Don't need to log this deletion.
 			if !autoDelete {
@@ -2189,6 +2202,9 @@ private extension AgileDB {
 		func openDBFile(_ dbFilePath: String, autoCloseTimeout: Int, completion: @escaping (_ successful: BoolResults, _ openedFromOtherThread: Bool, _ fileExists: Bool) -> Void) {
 			self.autoCloseTimeout = TimeInterval(exactly: autoCloseTimeout) ?? 0.0
 			self.dbFilePath = dbFilePath
+			if isDebugging {
+				print(dbFilePath)
+			}
 
 			let block = { [unowned self] in
 				let fileExists = FileManager.default.fileExists(atPath: dbFilePath)

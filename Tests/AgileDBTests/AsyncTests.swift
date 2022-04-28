@@ -188,6 +188,9 @@ class AsyncTests: XCTestCase {
 		do {
 			let hasKey = try await db.tableHasKey(table: table, key: "testKey4")
 			XCTAssertTrue(hasKey)
+
+			let hasKeys = try await db.tableHasAllKeys(table: table, keys: ["testKey1", "testKey2", "testKey3"])
+			XCTAssertTrue(hasKeys)
 		} catch {
 			XCTFail()
 		}
