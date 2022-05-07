@@ -2243,7 +2243,6 @@ private extension AgileDB {
 						return
 					}
 
-					self.autoCloseTimer?.suspend()
 					self.automaticallyClosed = true
 				} else {
 					self.isOpen = false
@@ -2496,12 +2495,15 @@ private extension AgileDB {
 
 		@discardableResult
 		private func addBlock(_ block: Any) -> UInt {
+			var executionBlockReference: UInt = 0
+			
 			blockQueue.sync {
 				if blockReference > (UInt.max - 5) {
 					blockReference = 1
 				} else {
 					blockReference += 1
 				}
+				executionBlockReference = blockReference
 			}
 
 			blockQueue.async {
@@ -2511,7 +2513,7 @@ private extension AgileDB {
 				self.threadLock.signal()
 			}
 
-			return blockReference
+			return executionBlockReference
 		}
 
 		override func main() {
@@ -2525,7 +2527,12 @@ private extension AgileDB {
 					}
 				}
 
-				while queuedBlocks.isNotEmpty {
+				var hasBlocks = false
+				blockQueue.sync {
+					hasBlocks = queuedBlocks.isNotEmpty
+				}
+
+				while hasBlocks {
 					if isDebugging {
 						Thread.sleep(forTimeInterval: 0.1)
 					}
@@ -2535,11 +2542,15 @@ private extension AgileDB {
 							queuedBlocks.removeFirst()
 							block()
 						}
+
+						hasBlocks = queuedBlocks.isNotEmpty
 					}
 				}
 
 				lastActivity = Date().timeIntervalSince1970
-				autoCloseTimer?.resume()
+				if !automaticallyClosed {
+					autoCloseTimer?.resume()
+				}
 
 				threadLock.wait()
 			}

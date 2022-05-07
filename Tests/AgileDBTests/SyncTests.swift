@@ -123,8 +123,6 @@ class SyncTests: XCTestCase {
 		db.open()
 		XCTAssert(db.unsyncedTables.count == 1)
 
-		let unsyncedTables = db.unsyncedTables
-
 		// will be deleted
 		db.setValueInTable(DBTable(name: "table8"), for: "testKey1", to: "{\"numValue\":10,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil)
 
