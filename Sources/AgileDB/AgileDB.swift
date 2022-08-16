@@ -1223,7 +1223,12 @@ public final class AgileDB {
 	 - returns: the existence of a specified table
 	 */
 	public func hasTable(_ table: DBTable) -> Bool {
-		return tables.hasTable(table)
+		let openResults = openDB()
+		if case .success(_) = openResults {
+			return tables.hasTable(table)
+		}
+
+		return false
 	}
 
 
