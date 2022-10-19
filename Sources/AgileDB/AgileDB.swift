@@ -102,8 +102,8 @@ public final class AgileDB {
 	private var dbInstanceKey = ""
 	private var tables = DBTables()
 	private var indexes = [String: [String]]()
-	private let dbQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBQueue", qos: .userInitiated)
-	private let publisherQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBPublisherQueue", qos: .userInitiated)
+	private let dbQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBQueue")
+	private let publisherQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBPublisherQueue")
 	private var syncingEnabled = false
 	private var publishers = [UpdatablePublisher]()
 	private lazy var autoDeleteTimer: RepeatingTimer = {
@@ -257,7 +257,6 @@ public final class AgileDB {
 
 	- returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
 	*/
-	@available(*, deprecated, message: "Use await tableHasKey instead")
 	@discardableResult
 	public func tableHasKey(table: DBTable, key: String, queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
@@ -332,7 +331,6 @@ public final class AgileDB {
 
 	 - returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
 	 */
-	@available(*, deprecated, message: "Use await tableHasAllKeys instead")
 	@discardableResult
 	public func tableHasAllKeys(table: DBTable, keys: [String], queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
@@ -464,7 +462,6 @@ public final class AgileDB {
 	*/
 
 	@discardableResult
-	@available(*, deprecated, message: "Use await keysInTable instead")
 	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping (KeyResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults {
@@ -513,6 +510,9 @@ public final class AgileDB {
 		let publisher = DBResultsPublisher<T>(db: self, table: T.table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
 		dbQueue.sync {
 			publishers.append(publisher)
+			DispatchQueue.global().async {
+				publisher.updateSubject()
+			}
 		}
 
 		return publisher
@@ -670,7 +670,6 @@ public final class AgileDB {
 
 	*/
 	@discardableResult
-	@available(*, deprecated, message: "Use await valueFromTable instead")
 	public func valueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (JsonResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults, !tables.hasTable(table) {
@@ -776,7 +775,6 @@ public final class AgileDB {
 	- returns: Returns a DBCommandToken that can be used to cancel the command before it executes. If the database file cannot be opened or table does not exist nil is returned.
 	*/
 	@discardableResult
-	@available(*, deprecated, message: "Use await dictValueFromTable instead")
 	public func dictValueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (DictResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults, !tables.hasTable(table) {
@@ -2108,7 +2106,6 @@ extension AgileDB {
 
 	  - returns: Result<[DBRow], DBError>
 	  */
-	@available(*, deprecated, message: "Use await sqlSelect instead")
 	@discardableResult
 	public func sqlSelect(_ sql: String, queue: DispatchQueue? = nil, completion: @escaping (RowResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
