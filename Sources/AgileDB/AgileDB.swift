@@ -31,8 +31,11 @@ public final class AgileDB {
 
 	public static let shared = AgileDB()
 
+	/// Path of the database file. Nil if database hasn't been opened yet
+	private(set) public var dbFilePath: String?
+
 	/**
-	Used for testing purposes. This should never be enabled in production.
+	Used for testing purposes. Slows the speed of the operations and gives lots of output.
 	*/
 	public var isDebugging = false {
 		didSet {
@@ -465,6 +468,7 @@ public final class AgileDB {
 	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping (KeyResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB()
 		if case .failure(_) = openResults {
+			completion(.failure(.cannotOpenFile))
 			return nil
 		}
 
@@ -473,7 +477,10 @@ public final class AgileDB {
 			return DBCommandToken(database: self, identifier: 0)
 		}
 
-		guard let sql = keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else { return nil }
+		guard let sql = keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else {
+			completion(.failure(.cannotParseData))
+			return nil
+		}
 
 		let blockReference = dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
 			let dispatchQueue = queue ?? DispatchQueue.main
@@ -1279,14 +1286,16 @@ public final class AgileDB {
 			return BoolResults.success(true)
 		}
 
-		let dbFilePath: String
+		let filePath: String
 
 		if let _dbFileLocation = self.dbFileLocation {
-			dbFilePath = _dbFileLocation.path
+			filePath = _dbFileLocation.path
 		} else {
-			dbFilePath = defaultFileLocation()
-			dbFileLocation = URL(fileURLWithPath: dbFilePath)
+			filePath = defaultFileLocation()
+			dbFileLocation = URL(fileURLWithPath: filePath)
 		}
+
+		dbFilePath = filePath
 
 		var fileExists = false
 
@@ -1296,7 +1305,7 @@ public final class AgileDB {
 		dbQueue.sync { [weak self]() -> Void in
 			guard let self = self else { return }
 
-			self.dbCore.openDBFile(dbFilePath, autoCloseTimeout: self.autoCloseTimeout) { (results, alreadyOpen, alreadyExists) -> Void in
+			self.dbCore.openDBFile(filePath, autoCloseTimeout: self.autoCloseTimeout) { (results, alreadyOpen, alreadyExists) -> Void in
 				openResults = results
 				previouslyOpened = alreadyOpen
 				fileExists = alreadyExists
@@ -1476,7 +1485,7 @@ extension AgileDB {
 				for condition in conditionSet {
 					if tableColumns.filter({ $0 == condition.objectKey }).isEmpty && arrayColumns.filter({ $0 == condition.objectKey }).isEmpty {
 						if isDebugging {
-							print("table \(table) has no column named \(condition.objectKey)")
+							print("^^^ table \(table) has no column named \(condition.objectKey)")
 						}
 						return nil
 					}
