@@ -11,9 +11,17 @@ import Foundation
 public protocol DBObject: Codable {
 	static var table: DBTable { get }
 	var key: String { get set }
+	var codingKeys: [CodingKey] { get }
 }
 
 extension DBObject {
+	/**
+	 Default response for codingKeys is empty so all DBObject properties are encoded
+	 */
+	public var codingKeys: [CodingKey] {
+		return []
+	}
+
 	/**
 	Instantiate object and populate with values from the database. If instantiation fails, nil is returned.
 
