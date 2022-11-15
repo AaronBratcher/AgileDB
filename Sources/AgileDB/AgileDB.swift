@@ -49,6 +49,11 @@ public final class AgileDB {
 	public var autoCloseTimeout = 0
 
 	/**
+	Print the SQL commands
+	 */
+	public var printSQL = false
+
+	/**
 	Read-only array of unsynced tables.  Any tables not in this array will be synced.
 	*/
 	private(set) public var unsyncedTables: [DBTable] = []
@@ -1448,15 +1453,11 @@ extension AgileDB {
 
 		let tableColumns = columnsInTable(table).map({ $0.name }) + ["key"]
 		var selectClause = "select distinct a.key from \(table) a"
-		var whereClause: String
-		if let testKey = testKey {
-			whereClause = " where a.key = '\(esc(testKey))'"
-		} else {
-			whereClause = " where 1=1"
-		}
+
+		var whereClause = ""
 
 		// if we have the include operator on an array object, do a left outer join
-		if var conditionSet = conditions, let firstCondition = conditionSet.first {
+		if var conditionSet = conditions {
 			if validateObjecs {
 				let invalidSets = conditionSet.filter({ !tableColumns.contains($0.objectKey) }).compactMap({ $0.set })
 				let validConditions = conditionSet.filter({ !invalidSets.contains($0.set) })
@@ -1471,111 +1472,27 @@ extension AgileDB {
 			}
 
 			if conditionSet.count > 0 {
-				whereClause += " AND ("
-				// order the conditions array by page
-				conditionSet.sort { $0.set < $1.set }
+				let pages = conditionSetPages(from: conditionSet)
+				var pageClauses: [String] = []
 
-				// conditionDict: ObjectKey,operator,value
-				var currentSet = firstCondition.set
-				var inPage = true
-				var inMultiPage = false
-				var firstConditionInSet = true
-				let hasMultipleSets = conditionSet.filter({ $0.set != firstCondition.set }).isNotEmpty
+				for page in pages {
+					pageClauses.append(pageClause(table: table, conditions: conditionSet.filter({ $0.set == page }), arrayColumns: arrayColumns))
+				}
 
-				for condition in conditionSet {
-					if tableColumns.filter({ $0 == condition.objectKey }).isEmpty && arrayColumns.filter({ $0 == condition.objectKey }).isEmpty {
-						if isDebugging {
-							print("^^^ table \(table) has no column named \(condition.objectKey)")
-						}
-						return nil
-					}
-
-					let valueType = SQLiteCore.typeOfValue(condition.value)
-
-					if currentSet != condition.set {
-						currentSet = condition.set
-						whereClause += ")"
-						if inMultiPage {
-							inMultiPage = false
-							whereClause += ")"
-						}
-						whereClause += " OR ("
-
-						inMultiPage = false
+				for (index, pageClause) in pageClauses.enumerated() {
+					if index > 0 {
+						whereClause += "\nOR \(pageClause)"
 					} else {
-						inPage = true
-						if firstConditionInSet {
-							firstConditionInSet = false
-							if hasMultipleSets {
-								whereClause += " ("
-							}
-						} else {
-							if inMultiPage {
-								whereClause += ")"
-							}
-
-							whereClause += " and key in (select key from \(table) where"
-							inMultiPage = true
-						}
+						whereClause += pageClause
 					}
-
-					switch condition.conditionOperator {
-					case .contains:
-						if arrayColumns.contains(condition.objectKey) {
-							switch valueType {
-							case .text:
-								whereClause += "b.objectKey = '\(condition.objectKey)' and b.stringValue = '\(esc(condition.value as! String))'"
-							case .int:
-								whereClause += "b.objectKey = '\(condition.objectKey)' and b.intValue = \(condition.value)"
-							case .double:
-								whereClause += "b.objectKey = '\(condition.objectKey)' and b.doubleValue = \(condition.value)"
-							default:
-								break
-							}
-						} else {
-							whereClause += " \(condition.objectKey) like '%%\(esc(condition.value as! String))%%'"
-						}
-					case .inList:
-						whereClause += " \(condition.objectKey)  in ("
-						if let stringArray = condition.value as? [String] {
-							for value in stringArray {
-								whereClause += "'\(esc(value))'"
-							}
-							whereClause += ")"
-						} else {
-							if let intArray = condition.value as? [Int] {
-								for value in intArray {
-									whereClause += "\(value)"
-								}
-								whereClause += ")"
-							} else {
-								for value in condition.value as! [Double] {
-									whereClause += "\(value)"
-								}
-								whereClause += ")"
-							}
-						}
-
-					default:
-						if let conditionValue = condition.value as? String {
-							whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) '\(esc(conditionValue))'"
-						} else {
-							whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) \(condition.value)"
-						}
-					}
-				}
-
-				whereClause += ")"
-
-				if inMultiPage {
-					whereClause += ")"
-				}
-
-				if inPage && hasMultipleSets {
-					whereClause += ")"
-					inPage = false
 				}
 			}
+		}
+
+		if let testKey = testKey {
+			whereClause = " where a.key = '\(esc(testKey))'"
+		} else if (conditions ?? []).isNotEmpty {
+			whereClause = " where 1=1 AND (\n\(whereClause)\n)"
 		}
 
 		if let sortOrder = sortOrder {
@@ -1583,7 +1500,100 @@ extension AgileDB {
 		}
 
 		let sql = selectClause + whereClause
+		if printSQL {
+			print("^^^ SQL: \(NSString(string: sql))")
+		}
 		return sql
+	}
+
+	private func conditionSetPages(from conditions: [DBCondition]) -> Set<Int> {
+		var pages: Set<Int> = []
+		for condition in conditions {
+			pages.insert(condition.set)
+		}
+
+		return pages
+	}
+
+	private func pageClause(table: DBTable, conditions: [DBCondition], arrayColumns: [String]) -> String {
+		var whereClause = "a.key in (select key from \(table.name) where "
+		for (index, condition) in conditions.enumerated() {
+			let conditionClause = conditionClause(from: condition, arrayColumns: arrayColumns)
+			if index > 0 {
+				whereClause += " AND \(conditionClause)"
+			} else {
+				whereClause += conditionClause
+			}
+		}
+		whereClause += ")"
+
+		return whereClause
+	}
+
+	private func conditionClause(from condition: DBCondition, arrayColumns: [String]) -> String {
+		let valueType = SQLiteCore.typeOfValue(condition.value)
+		var whereClause = ""
+		switch condition.conditionOperator {
+		case .contains:
+			if arrayColumns.contains(condition.objectKey) {
+				switch valueType {
+				case .text:
+					whereClause += "b.objectKey = '\(condition.objectKey)' and b.stringValue = '\(esc(condition.value as! String))'"
+				case .int:
+					whereClause += "b.objectKey = '\(condition.objectKey)' and b.intValue = \(condition.value)"
+				case .double:
+					whereClause += "b.objectKey = '\(condition.objectKey)' and b.doubleValue = \(condition.value)"
+				default:
+					break
+				}
+			} else {
+				whereClause += " \(condition.objectKey) like '%%\(esc(condition.value as! String))%%'"
+			}
+
+		case .inList:
+			var listItems = ""
+
+			if let valueArray = condition.value as? [String], valueArray.isNotEmpty {
+				for (index, value) in valueArray.enumerated() {
+					listItems += "'\(esc(value))'"
+					if index < valueArray.count - 1 {
+						listItems += ", "
+					}
+				}
+			} else if let valueArray = condition.value as? [Int], valueArray.isNotEmpty {
+				for (index, value) in valueArray.enumerated() {
+					listItems += "\(value)"
+					if index < valueArray.count - 1 {
+						listItems += ", "
+					}
+				}
+			} else if let valueArray = condition.value as? [Double], valueArray.isNotEmpty {
+				for (index, value) in valueArray.enumerated()  {
+					listItems += "\(value)"
+					if index < valueArray.count - 1 {
+						listItems += ", "
+					}
+				}
+			}
+
+			if listItems.isNotEmpty {
+				whereClause += " \(condition.objectKey) in (\(listItems))"
+			}
+
+		default:
+			if let conditionValue = condition.value as? String {
+				whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) '\(esc(conditionValue))'"
+			} else if let conditionValue = condition.value as? Date {
+				whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) '\(AgileDB.stringValueForDate(conditionValue))'"
+			} else if let conditionValue = condition.value as? Bool {
+				let boolValue = conditionValue ? 1 : 0
+				whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) \(boolValue)"
+			} else {
+				whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) \(condition.value)"
+			}
+		}
+
+		return whereClause
 	}
 
 	private func setValue(table: DBTable, key: String, objectValues: [String: AnyObject], addedDateTime: String, updatedDateTime: String, deleteDateTime: String, sourceDB: String, originalDB: String) -> Bool {
