@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "AgileDB"
-  s.version      = "6.5.3"
+  s.version      = "6.5.4"
   s.summary      = "Save and retrieve full object graphs to SQLite"
   s.homepage	 = "https://github.com/AaronBratcher/AgileDB"
 
