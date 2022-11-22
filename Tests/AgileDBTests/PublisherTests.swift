@@ -60,7 +60,7 @@ class PublisherTests: XCTestCase {
 		addObjectsToDB()
 
 		let expectations = expectation(description: "PublisherExpectations")
-		expectations.expectedFulfillmentCount = 7
+		expectations.expectedFulfillmentCount = 8
 		let account1Condition = DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "A1" as AnyObject)
 		let account2Condition = DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "A2" as AnyObject)
 
@@ -76,7 +76,7 @@ class PublisherTests: XCTestCase {
 				XCTAssertEqual(results.count, 6)
 			}
 
-			if index1 == 3 {
+			if index1 == 4 {
 				XCTAssertEqual(results.count, 5)
 			}
 			index1 += 1
@@ -96,7 +96,7 @@ class PublisherTests: XCTestCase {
 			expectations.fulfill()
 		}
 
-		DispatchQueue.main.asyncAfter(wallDeadline: .now() + 1) {
+		DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
 			var transaction = Transaction(key: "K10", date: Date(), accountKey: "A1", amount: 100, isNew: true)
 			transaction.save(to: self.db)
 
@@ -104,12 +104,11 @@ class PublisherTests: XCTestCase {
 			transaction.save(to: self.db)
 		}
 
-		DispatchQueue.main.asyncAfter(wallDeadline: .now() + 2) {
+		DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
 			self.db.deleteFromTable(Transaction.table, for: "K10")
 		}
 
-
-		waitForExpectations(timeout: 15, handler: nil)
+		waitForExpectations(timeout: 10, handler: nil)
 	}
 
 	func addObjectsToDB() {

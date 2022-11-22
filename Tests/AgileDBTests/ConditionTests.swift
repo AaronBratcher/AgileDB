@@ -33,11 +33,7 @@ class ConditionTests: XCTestCase {
 		db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1}", autoDeleteAfter: nil)
 
 		let accountCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .equal, value: "ACCT1" as AnyObject)
-		if let keys = db.keysInTable(table, sortOrder: nil, conditions: [accountCondition]) {
-			XCTAssert(keys.count == 0, "Keys shouldnt exist")
-		} else {
-			XCTAssert(false, "no keys object returned")
-		}
+		XCTAssertNil(db.keysInTable(table, sortOrder: nil, conditions: [accountCondition]))
 
 		let keyCondition = DBCondition(set: 0, objectKey: "key", conditionOperator: .equal, value: "ACCT1" as AnyObject)
 		if let keys = db.keysInTable(table, sortOrder: nil, conditions: [keyCondition]) {

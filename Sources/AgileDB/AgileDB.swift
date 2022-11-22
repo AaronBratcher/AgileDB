@@ -44,9 +44,9 @@ public final class AgileDB {
 	}
 
 	/**
-	The number of seconds to wait after inactivity before automatically closing the file. File is automatically opened for next activity. A value of 0 means never close automatically
+	The number of seconds to wait after inactivity before automatically closing the file. File is automatically opened for next activity. A value of 0 means never close automatically. Default is 2.
 	*/
-	public var autoCloseTimeout = 0
+	public var autoCloseTimeout = 2
 
 	/**
 	Print the SQL commands
@@ -522,9 +522,6 @@ public final class AgileDB {
 		let publisher = DBResultsPublisher<T>(db: self, table: T.table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
 		dbQueue.sync {
 			publishers.append(publisher)
-			DispatchQueue.global().async {
-				publisher.updateSubject()
-			}
 		}
 
 		return publisher
@@ -839,13 +836,9 @@ public final class AgileDB {
 		var deleted = false
 
 		publisherQueue.sync {
-			let publishers = publishersContaining(key: key, in: table)
-
 			deleted = deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
 			if deleted {
-				for publisher in publishers {
-					publisher.updateSubject()
-				}
+				updatePublisherResults(for: key, in: table)
 			}
 		}
 
@@ -865,16 +858,12 @@ public final class AgileDB {
 		assert(key != "", "key must be provided")
 
 		return publisherQueue.sync { () -> Bool in
-			let publishers = publishersContaining(key: key, in: table)
-
-			let successful = deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
-			if successful {
-				for publisher in publishers {
-					publisher.updateSubject()
-				}
+			let deleted = deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
+			if deleted {
+				updatePublisherResults(for: key, in: table)
 			}
 
-			return successful
+			return deleted
 		}
 	}
 
@@ -1406,8 +1395,8 @@ extension AgileDB {
 	}
 
 	fileprivate func updatePublisherResults(for key: String, in table: DBTable) {
-		publisherQueue.sync {
-			for publisher in publishersContaining(key: key, in: table) {
+		publisherQueue.async {
+			for publisher in self.publishersContaining(key: key, in: table) {
 				publisher.updateSubject()
 			}
 		}
@@ -1425,9 +1414,9 @@ extension AgileDB {
 		var matchingPublishers = [UpdatablePublisher]()
 
 		for publisher in publishers where publisher.table == table {
-			guard let sql = keysInTableSQL(table: table, sortOrder: nil, conditions: publisher.conditions, validateObjecs: publisher.validateObjects, testKey: key)
-			, let results = sqlSelect(sql)
-				else { continue }
+			guard let sql = keysInTableSQL(table: table, sortOrder: nil, conditions: publisher.conditions, validateObjecs: publisher.validateObjects, testKey: key) else { continue }
+
+			guard let results = sqlSelect(sql) else { continue }
 
 			let keys = results.map({ $0.values[0] as! String })
 			if keys.count > 0 {
@@ -1491,7 +1480,7 @@ extension AgileDB {
 
 		if let testKey = testKey {
 			whereClause = " where a.key = '\(esc(testKey))'"
-		} else if (conditions ?? []).isNotEmpty {
+		} else if (conditions ?? []).isNotEmpty && whereClause.isNotEmpty {
 			whereClause = " where 1=1 AND (\n\(whereClause)\n)"
 		}
 
