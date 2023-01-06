@@ -128,6 +128,7 @@ public final class AgileDB {
 	*/
 	public init(fileLocation: URL? = nil) {
 		dbFileLocation = fileLocation
+		dbCore.qualityOfService = .userInteractive
 		dbCore.start()
 	}
 
