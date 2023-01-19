@@ -374,7 +374,8 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
     
 # Revision History
 ### 6.5 ###
-- All DBObject methods have async/await counterparts 
+- All DBObject methods have async/await counterparts
+- Developed and tested with Xcode 14.2
 
 ### 6.4 ###
 - Updated DBObject encoding to support Dictonary, Codable Struct, [Dictionary], and [Codable Struct]

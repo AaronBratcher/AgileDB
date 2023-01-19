@@ -1335,9 +1335,9 @@ public final class AgileDB {
 	}
 
 	private func makeDB() {
-		assert(sqlExecute("create table __settings(key text, value text)"), "Unable to make DB")
-		assert(sqlExecute("insert into __settings(key,value) values('schema',1)"), "Unable to make DB")
-		assert(sqlExecute("create table __tableArrayColumns(tableName text, arrayColumns text)"), "Unable to make DB")
+		sqlExecute("create table __settings(key text, value text)")
+		sqlExecute("insert into __settings(key,value) values('schema',1)")
+		sqlExecute("create table __tableArrayColumns(tableName text, arrayColumns text)")
 	}
 
 	private func checkSchema() {
