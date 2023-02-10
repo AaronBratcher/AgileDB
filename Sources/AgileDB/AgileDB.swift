@@ -2165,6 +2165,11 @@ private extension AgileDB {
 		var isOpen = false
 		var isDebugging = false
 
+		override init() {
+			super.init()
+			self.name = "AgileDB"
+		}
+
 		private struct ExecutionBlock {
 			var block: Any
 			var blockReference: UInt
