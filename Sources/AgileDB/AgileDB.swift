@@ -1558,7 +1558,7 @@ extension AgileDB {
 					}
 				}
 			} else if let valueArray = condition.value as? [Double], valueArray.isNotEmpty {
-				for (index, value) in valueArray.enumerated()  {
+				for (index, value) in valueArray.enumerated() {
 					listItems += "\(value)"
 					if index < valueArray.count - 1 {
 						listItems += ", "
@@ -2512,7 +2512,7 @@ private extension AgileDB {
 		@discardableResult
 		private func addBlock(_ block: Any) -> UInt {
 			var executionBlockReference: UInt = 0
-			
+
 			blockQueue.sync {
 				if blockReference > (UInt.max - 5) {
 					blockReference = 1
