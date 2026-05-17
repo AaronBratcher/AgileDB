@@ -1,34 +1,13 @@
-//
-//  DBResultsTests.swift
-//  AgileDBTests
-//
-//  Created by Aaron Bratcher  on 5/9/20.
-//  Copyright © 2020 Aaron Bratcher. All rights reserved.
-//
-
-import XCTest
+import Testing
+import Foundation
 @testable import AgileDB
 
-class DBResultsTests: XCTestCase {
-	lazy var db: AgileDB = {
-		return dbForTestClass(className: String(describing: type(of: self)))
-	}()
-
-	override func setUpWithError() throws {
-		super.setUp()
-
-		db.dropAllTables()
-	}
-
-	override func tearDownWithError() throws {
-		// Put teardown code here. This method is called after the invocation of each test method in the class.
-		super.tearDown()
-		db.close()
-		removeDB(for: String(describing: type(of: self)))
-	}
-
-
+@Suite("DBResults")
+struct DBResultsTests {
+	@Test
 	func testDBResults() async throws {
+		let db = dbForTesting()
+
 		let date = Date()
 		let keys = ["1", "2", "3"]
 
@@ -42,9 +21,16 @@ class DBResultsTests: XCTestCase {
 		await transaction.save(to: db)
 
 		let transactions = DBResults<Transaction>(db: db, keys: keys)
-		XCTAssertEqual(transactions.count, 3)
-		XCTAssertEqual(transactions[0]?.accountKey, "A1")
-		XCTAssertEqual(transactions[1]?.accountKey, "A2")
-		XCTAssertEqual(transactions[2]?.accountKey, "A3")
+		#expect(transactions.count == 3)
+
+		let t1 = try await #require(transactions.object(at: 0))
+		let t2 = try await #require(transactions.object(at: 1))
+		let t3 = try await #require(transactions.object(at: 2))
+
+		#expect(t1.accountKey == "A1")
+		#expect(t2.accountKey == "A2")
+		#expect(t3.accountKey == "A3")
+
+		await removeDB(db)
 	}
 }

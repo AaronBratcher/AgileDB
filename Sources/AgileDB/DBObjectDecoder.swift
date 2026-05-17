@@ -93,30 +93,13 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	}
 
 	func decodeObject(_ type: DBObject.Type, forKey key: K) throws -> DBObject {
-		guard let value = dict[key.stringValue] as? String else {
-			throw DictDecoderError.missingValueForKey(key.stringValue)
-		}
-
-		guard let dbObject = type.init(db: db, key: value) else {
-			throw DictDecoderError.invalidNestedObject(key.stringValue, value)
-		}
-
-		return dbObject
+		// Nested DBObjects cannot be loaded synchronously with the actor model.
+		// Store only the key string and load nested objects explicitly using async APIs.
+		throw DictDecoderError.missingValueForKey("Nested DBObject '\(key.stringValue)': use async APIs to load nested objects explicitly.")
 	}
 
 	func decodeObjectArray(_ type: DBObjectArrayMarker.Type, forKey key: K) throws -> [DBObject] {
-		guard let values = dict[key.stringValue] as? [String] else {
-			throw DictDecoderError.missingValueForKey(key.stringValue)
-		}
-
-		var objectValues: [DBObject] = []
-		for value in values {
-			if let dbObject = type.elementType.init(db: db, key: value) {
-				objectValues.append(dbObject)
-			}
-		}
-
-		return objectValues
+		throw DictDecoderError.missingValueForKey("Nested DBObject array '\(key.stringValue)': use async APIs to load nested objects explicitly.")
 	}
 
 	func decode(_ type: Bool.Type, forKey key: K) throws -> Bool {

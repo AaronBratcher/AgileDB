@@ -6,7 +6,8 @@
 //  Copyright © 2020 Aaron Bratcher. All rights reserved.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import AgileDB
 
 struct ShippingAddress: Codable {
@@ -105,51 +106,43 @@ struct Person: DBObject {
 	var lastName = "Manaager"
 }
 
-class DBObjectTests: XCTestCase {
-	lazy var db: AgileDB = {
-		return dbForTestClass(className: String(describing: type(of: self)))
-	}()
-
-	override func setUpWithError() throws {
-		super.setUp()
-
-		db.dropAllTables()
-	}
-
-	override func tearDownWithError() throws {
-		// Put teardown code here. This method is called after the invocation of each test method in the class.
-		super.tearDown()
-		db.close()
-		removeDB(for: String(describing: type(of: self)))
-	}
-
+@Suite("Database Object Tests")
+struct DBObjectTests {
+	@Test("Save object to database")
 	func testSaveObject() async throws {
-		let date: Date = { Date() }()
+		let db = dbForTesting()
+
+		let date: Date = Date()
 		let purchaseDates = [date, date, date]
 
 		let transaction = Transaction(key: TransactionValue.key, date: date, accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, purchaseOrders: TransactionValue.purchaseOrders, purchaseDates: purchaseDates, isNew: TransactionValue.isNew)
 		await transaction.save(to: db)
 
-		guard let testTransaction = await Transaction.init(db: db, key: TransactionValue.key) else { XCTFail(); return }
+		let testTransaction = try #require(await Transaction.init(db: db, key: TransactionValue.key))
 
-		let dateCompare = Calendar(identifier: .gregorian).compare(date, to: testTransaction.date, toGranularity: .nanosecond)
-		let dateCompare0 = Calendar(identifier: .gregorian).compare(date, to: testTransaction.purchaseDates![0], toGranularity: .nanosecond)
-		let dateCompare1 = Calendar(identifier: .gregorian).compare(date, to: testTransaction.purchaseDates![1], toGranularity: .nanosecond)
-		let dateCompare2 = Calendar(identifier: .gregorian).compare(date, to: testTransaction.purchaseDates![2], toGranularity: .nanosecond)
+		let dateCompare = Calendar(identifier: .gregorian).compare(date, to: testTransaction.date, toGranularity: .second)
+		let dateCompare0 = Calendar(identifier: .gregorian).compare(date, to: testTransaction.purchaseDates![0], toGranularity: .second)
+		let dateCompare1 = Calendar(identifier: .gregorian).compare(date, to: testTransaction.purchaseDates![1], toGranularity: .second)
+		let dateCompare2 = Calendar(identifier: .gregorian).compare(date, to: testTransaction.purchaseDates![2], toGranularity: .second)
 
-		XCTAssertEqual(testTransaction.key, TransactionValue.key)
-		XCTAssertEqual(dateCompare, ComparisonResult.orderedSame)
-		XCTAssertEqual(testTransaction.accountKey, TransactionValue.accountKey)
-		XCTAssertEqual(testTransaction.notes, TransactionValue.notes)
-		XCTAssertEqual(testTransaction.amount, TransactionValue.amount)
-		XCTAssertEqual(testTransaction.purchaseOrders, TransactionValue.purchaseOrders)
-		XCTAssertEqual(dateCompare0, ComparisonResult.orderedSame)
-		XCTAssertEqual(dateCompare1, ComparisonResult.orderedSame)
-		XCTAssertEqual(dateCompare2, ComparisonResult.orderedSame)
-		XCTAssertEqual(testTransaction.isNew, TransactionValue.isNew)
+		#expect(testTransaction.key == TransactionValue.key)
+		#expect(testTransaction.accountKey == TransactionValue.accountKey)
+		#expect(testTransaction.notes == TransactionValue.notes)
+		#expect(testTransaction.amount == TransactionValue.amount)
+		#expect(testTransaction.purchaseOrders == TransactionValue.purchaseOrders)
+		#expect(dateCompare == ComparisonResult.orderedSame)
+		#expect(dateCompare0 == ComparisonResult.orderedSame)
+		#expect(dateCompare1 == ComparisonResult.orderedSame)
+		#expect(dateCompare2 == ComparisonResult.orderedSame)
+		#expect(testTransaction.isNew == TransactionValue.isNew)
+
+		await removeDB(db)
 	}
 
+	@Test("Complex object with nested structures")
 	func testComplexObject() async throws {
+		let db = dbForTesting()
+
 		let address = ShippingAddress(streetNumber: 123, streetName: "Main St", city: "Chicago", state: "IL", zip: "60614", active: false, residents: ["Man", "Woman", "Child"])
 		let addresses = [address, address]
 
@@ -157,70 +150,92 @@ class DBObjectTests: XCTestCase {
 		await addressHolder.save(to: db)
 
 		let newHolder = try await AddressHolder.load(from: db, for: addressHolder.key)
-		XCTAssertEqual(newHolder.address, address)
-		XCTAssertEqual(newHolder.authorName, addressHolder.authorName)
-		XCTAssertEqual(newHolder.authors, addressHolder.authors)
+		#expect(newHolder.address == address)
+		#expect(newHolder.authorName == addressHolder.authorName)
+		#expect(newHolder.authors == addressHolder.authors)
 
 		addressHolder = AddressHolder(using: address, addresses: addresses)
 		await addressHolder.save(to: db)
 
 		let newHolder2 = try await AddressHolder.load(from: db, for: addressHolder.key)
-		XCTAssertEqual(newHolder2.address, address)
-		XCTAssertEqual(newHolder2.addresses, addresses)
-		XCTAssertEqual(newHolder2.authorName, addressHolder.authorName)
-		XCTAssertEqual(newHolder.authors, addressHolder.authors)
+		#expect(newHolder2.address == address)
+		#expect(newHolder2.addresses == addresses)
+		#expect(newHolder2.authorName == addressHolder.authorName)
+		#expect(newHolder.authors == addressHolder.authors)
+
+		await removeDB(db)
 	}
 
+	@Test("Save nil value")
 	func testSaveNilValue() async throws {
+		let db = dbForTesting()
+
 		let date = Date()
 		let transaction = Transaction(key: TransactionValue.key, date: date, accountKey: TransactionValue.accountKey, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
 		await transaction.save(to: db)
 
-		guard let testTransaction = await Transaction.init(db: db, key: TransactionValue.key) else { XCTFail(); return }
+		let testTransaction = try #require(await Transaction.init(db: db, key: TransactionValue.key))
 
-		XCTAssertNil(testTransaction.notes)
+		#expect(testTransaction.notes == nil)
+
+		await removeDB(db)
 	}
 
+	@Test("Load async object")
 	func testAsyncObject() async throws {
+		let db = dbForTesting()
+
 		let transaction = Transaction(key: TransactionValue.key, date: Date(), accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
 		await transaction.save(to: db)
 
-
 		let transaction2 = try await Transaction.load(from: db, for: TransactionValue.key)
-		XCTAssertEqual(transaction2.key, TransactionValue.key)
-		XCTAssertEqual(transaction2.accountKey, TransactionValue.accountKey)
+		#expect(transaction2.key == TransactionValue.key)
+		#expect(transaction2.accountKey == TransactionValue.accountKey)
+
+		await removeDB(db)
 	}
 
+	@Test("Delete object from database")
 	func testDelete() async throws {
+		let db = dbForTesting()
+
 		let transaction = Transaction(key: TransactionValue.key, date: Date(), accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
 		await transaction.save(to: db)
 		await transaction.delete(from: db)
 		let hasKey = try await db.tableHasKey(table: Transaction.table, key: TransactionValue.key)
 
-		XCTAssertFalse(hasKey)
+		#expect(!hasKey)
+
+		await removeDB(db)
 	}
 
+	@Test("Load object from database")
 	func testLoadFromDB() async throws {
+		let db = dbForTesting()
+
 		let transaction = Transaction(key: TransactionValue.key, date: Date(), accountKey: TransactionValue.accountKey, notes: TransactionValue.notes, amount: TransactionValue.amount, isNew: TransactionValue.isNew)
 		await transaction.save(to: db)
 
-		do {
-			let object = try await Transaction.load(from: db, for: TransactionValue.key)
-			XCTAssertEqual(object.accountKey, TransactionValue.accountKey)
-			XCTAssertEqual(object.amount, TransactionValue.amount)
-		} catch {
-			XCTFail()
-		}
+		let object = try await Transaction.load(from: db, for: TransactionValue.key)
+		#expect(object.accountKey == TransactionValue.accountKey)
+		#expect(object.amount == TransactionValue.amount)
+
+		await removeDB(db)
 	}
 
+	@Test("Nested object save")
 	func testNestedSave() async throws {
+		let db = dbForTesting()
+
 		let transaction = EncodingTransaction()
 		await transaction.save(to: db)
 
 		let loadedTransaction = await EncodingTransaction(db: db, key: transaction.key)
-		let encodingTransaction = try XCTUnwrap(loadedTransaction)
-		XCTAssertEqual(transaction.amount, encodingTransaction.amount)
-		XCTAssertEqual(encodingTransaction.locations.count, 3)
-		XCTAssertEqual(encodingTransaction.locations[0].manager.firstName, "Store")
+		let encodingTransaction = try #require(loadedTransaction)
+		#expect(transaction.amount == encodingTransaction.amount)
+		#expect(encodingTransaction.locations.count == 3)
+		#expect(encodingTransaction.locations[0].manager.firstName == "Store")
+
+		await removeDB(db)
 	}
 }

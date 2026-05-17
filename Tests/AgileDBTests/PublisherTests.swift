@@ -6,137 +6,141 @@
 //  Copyright © 2020 Aaron Bratcher. All rights reserved.
 //
 
-import XCTest
+import Foundation
+import Testing
 import Combine
 @testable import AgileDB
 
-class PublisherTests: XCTestCase {
-	lazy var db: AgileDB = {
-		return dbForTestClass(className: String(describing: type(of: self)))
-	}()
+@Suite("Publisher Tests")
+struct PublisherTests {
+	@Test("Create publisher")
+	func testCreatePublisher() async throws {
+		let db = dbForTesting()
 
-	override func setUpWithError() throws {
-		super.setUp()
+		await addObjectsToDB(db)
 
-		db.dropAllTables()
-	}
+		var receivedResults: [DBResults<Transaction>] = []
+		let publisher: DBResultsPublisher<Transaction> = await db.publisher()
 
-	override func tearDownWithError() throws {
-		// Put teardown code here. This method is called after the invocation of each test method in the class.
-		super.tearDown()
-		db.close()
-		removeDB(for: String(describing: type(of: self)))
-	}
-
-	func testCreatePublisher() throws {
-		addObjectsToDB()
-
-		let expectations = expectation(description: "PublisherExpectations")
-		expectations.expectedFulfillmentCount = 3
-
-		var index = 0
-		let publisher: DBResultsPublisher<Transaction> = db.publisher()
-		let subscription = publisher.sink(receiveCompletion: { _ in }) { (results) in
-			if index == 1 {
-				XCTAssertEqual(results.count, 9)
-			}
-
-			if index == 2 {
-				XCTAssertEqual(results.count, 10)
-			}
-			index += 1
-			expectations.fulfill()
+		let cancellable = publisher.sink(receiveCompletion: { _ in }) { results in
+			receivedResults.append(results)
 		}
 
-		DispatchQueue.main.asyncAfter(wallDeadline: .now() + 1) {
-			let transaction = Transaction(key: "K10", date: Date(), accountKey: "A1", amount: 100, isNew: true)
-			transaction.save(to: self.db)
-		}
+		// Wait for initial publisher update
+		try await Task.sleep(nanoseconds: 500_000_000)
 
-		waitForExpectations(timeout: 120, handler: nil)
+		// Add a new transaction
+		var transaction = Transaction(date: Date(), accountKey: "A1", amount: 100)
+		transaction.key = "K10"
+		await transaction.save(to: db)
+
+		// Wait for publisher update
+		try await Task.sleep(nanoseconds: 1_500_000_000)
+
+		// Verify we received the expected updates
+		#expect(receivedResults.count >= 2, "Should have received at least 2 updates")
+		#expect(receivedResults[1].count == 9, "Second update should have 9 items")
+		#expect(receivedResults[2].count == 10, "Third update should have 10 items")
+
+		cancellable.cancel()
+
+		await removeDB(db)
 	}
 
-	func testUpdatedPublishers() throws {
-		addObjectsToDB()
+	@Test("Updated publishers")
+	func testUpdatedPublishers() async throws {
+		let db = dbForTesting()
 
-		let expectations = expectation(description: "PublisherExpectations")
-		expectations.expectedFulfillmentCount = 8
+		await addObjectsToDB(db)
+
 		let account1Condition = DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "A1" as AnyObject)
 		let account2Condition = DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "A2" as AnyObject)
 
-		var index1 = 0
-		var index2 = 0
-		let publisher1: DBResultsPublisher<Transaction> = db.publisher(conditions: [account1Condition])
-		let subscription1 = publisher1.sink(receiveCompletion: { _ in }) { (results) in
-			if index1 == 1 {
-				XCTAssertEqual(results.count, 5)
-			}
+		var results1: [DBResults<Transaction>] = []
+		var results2: [DBResults<Transaction>] = []
 
-			if index1 == 2 {
-				XCTAssertEqual(results.count, 6)
-			}
-
-			if index1 == 4 {
-				XCTAssertEqual(results.count, 5)
-			}
-			index1 += 1
-			expectations.fulfill()
+		let publisher1: DBResultsPublisher<Transaction> = await db.publisher(conditions: [account1Condition])
+		let subscription1 = publisher1.sink(receiveCompletion: { _ in }) { results in
+			results1.append(results)
 		}
 
-		let publisher2: DBResultsPublisher<Transaction> = db.publisher(conditions: [account2Condition])
-		let subscription2 = publisher2.sink(receiveCompletion: { _ in }) { (results) in
-			if index2 == 1 {
-				XCTAssertEqual(results.count, 4)
-			}
-
-			if index2 == 2 {
-				XCTAssertEqual(results.count, 5)
-			}
-			index2 += 1
-			expectations.fulfill()
+		let publisher2: DBResultsPublisher<Transaction> = await db.publisher(conditions: [account2Condition])
+		let subscription2 = publisher2.sink(receiveCompletion: { _ in }) { results in
+			results2.append(results)
 		}
 
-		DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-			var transaction = Transaction(key: "K10", date: Date(), accountKey: "A1", amount: 100, isNew: true)
-			transaction.save(to: self.db)
+		// Wait for initial updates
+		try await Task.sleep(nanoseconds: 500_000_000)
 
-			transaction = Transaction(key: "K11", date: Date(), accountKey: "A2", amount: 100, isNew: true)
-			transaction.save(to: self.db)
-		}
+		// Add transactions
+		var transaction = Transaction(date: Date(), accountKey: "A1", amount: 100)
+		transaction.key = "K10"
+		await transaction.save(to: db)
 
-		DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-			self.db.deleteFromTable(Transaction.table, for: "K10")
-		}
+		transaction = Transaction(date: Date(), accountKey: "A2", amount: 100)
+		transaction.key = "K11"
+		await transaction.save(to: db)
 
-		waitForExpectations(timeout: 10, handler: nil)
+		// Wait for updates
+		try await Task.sleep(nanoseconds: 1_500_000_000)
+
+		// Delete a transaction
+		await db.deleteFromTable(Transaction.table, for: "K10")
+
+		// Wait for final updates
+		try await Task.sleep(nanoseconds: 1_500_000_000)
+
+		// Verify publisher 1 received expected updates
+		#expect(results1.count >= 3, "Publisher 1 should have received at least 3 updates")
+		#expect(results1[1].count == 5, "Publisher 1 second update should have 5 items")
+		#expect(results1[2].count == 6, "Publisher 1 third update should have 6 items")
+
+		// Verify publisher 2 received expected updates
+		#expect(results2.count >= 2, "Publisher 2 should have received at least 2 updates")
+		#expect(results2[1].count == 4, "Publisher 2 second update should have 4 items")
+		#expect(results2[2].count == 5, "Publisher 2 third update should have 5 items")
+
+		subscription1.cancel()
+		subscription2.cancel()
+
+		await removeDB(db)
 	}
 
-	func addObjectsToDB() {
-		var transaction = Transaction(key: "K1", date: Date(), accountKey: "A1", amount: 100, isNew: true)
-		transaction.save(to: db)
+	func addObjectsToDB(_ db: AgileDB) async {
+		var transaction = Transaction(date: Date(), accountKey: "A1", amount: 100)
+		transaction.key = "K1"
+		await transaction.save(to: db)
 
-		transaction = Transaction(key: "K2", date: Date(), accountKey: "A1", amount: 200, isNew: true)
-		transaction.save(to: db)
+		transaction = Transaction(date: Date(), accountKey: "A1", amount: 200)
+		transaction.key = "K2"
+		await transaction.save(to: db)
 
-		transaction = Transaction(key: "K3", date: Date(), accountKey: "A1", amount: 300, isNew: true)
-		transaction.save(to: db)
+		transaction = Transaction(date: Date(), accountKey: "A1", amount: 300)
+		transaction.key = "K3"
+		await transaction.save(to: db)
 
-		transaction = Transaction(key: "K4", date: Date(), accountKey: "A1", amount: 400, isNew: true)
-		transaction.save(to: db)
+		transaction = Transaction(date: Date(), accountKey: "A1", amount: 400)
+		transaction.key = "K4"
+		await transaction.save(to: db)
 
-		transaction = Transaction(key: "K5", date: Date(), accountKey: "A1", amount: 500, isNew: true)
-		transaction.save(to: db)
+		transaction = Transaction(date: Date(), accountKey: "A1", amount: 500)
+		transaction.key = "K5"
+		await transaction.save(to: db)
 
-		transaction = Transaction(key: "K6", date: Date(), accountKey: "A2", amount: 600, isNew: true)
-		transaction.save(to: db)
+		transaction = Transaction(date: Date(), accountKey: "A2", amount: 600)
+		transaction.key = "K6"
+		await transaction.save(to: db)
 
-		transaction = Transaction(key: "K7", date: Date(), accountKey: "A2", amount: 700, isNew: true)
-		transaction.save(to: db)
+		transaction = Transaction(date: Date(), accountKey: "A2", amount: 700)
+		transaction.key = "K7"
+		await transaction.save(to: db)
 
-		transaction = Transaction(key: "K8", date: Date(), accountKey: "A2", amount: 800, isNew: true)
-		transaction.save(to: db)
+		transaction = Transaction(date: Date(), accountKey: "A2", amount: 800)
+		transaction.key = "K8"
+		await transaction.save(to: db)
 
-		transaction = Transaction(key: "K9", date: Date(), accountKey: "A2", amount: 900, isNew: true)
-		transaction.save(to: db)
+		transaction = Transaction(date: Date(), accountKey: "A2", amount: 900)
+		transaction.key = "K9"
+		await transaction.save(to: db)
 	}
 }

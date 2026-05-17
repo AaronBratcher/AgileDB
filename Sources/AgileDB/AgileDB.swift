@@ -8,7 +8,7 @@
 import Foundation
 import SQLite3
 
-public final class AgileDB {
+public actor AgileDB {
 	enum ValueType: String {
 		case textArray = "stringArray"
 		case intArray
@@ -37,7 +37,7 @@ public final class AgileDB {
 	/**
 	Used for testing purposes. Slows the speed of the operations and gives lots of output.
 	*/
-	public var isDebugging = false {
+	private var isDebugging = false {
 		didSet {
 			dbCore.isDebugging = isDebugging
 		}
@@ -58,7 +58,7 @@ public final class AgileDB {
 	*/
 	private(set) public var unsyncedTables: [DBTable] = []
 
-	public static var dateFormatter: DateFormatter = {
+	nonisolated(unsafe) public static var dateFormatter: DateFormatter = {
 		let dateFormatter = DateFormatter()
 		dateFormatter.calendar = Calendar(identifier: .gregorian)
 		dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'.'SSSZZZZZ"
@@ -69,54 +69,40 @@ public final class AgileDB {
 	// MARK: - Private properties
 	private struct DBTables {
 		private var tables: [DBTable] = []
-		static let tableQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBTableQueue", attributes: [])
 
 		func allTables() -> [DBTable] {
 			return tables
 		}
 
 		mutating func addTable(_ table: DBTable) {
-			DBTables.tableQueue.sync {
-				tables.append(DBTable(name: table.name))
-			}
+			tables.append(DBTable(name: table.name))
 		}
 
 		mutating func dropTable(_ table: DBTable) {
-			DBTables.tableQueue.sync {
-				tables = tables.filter({ $0 != table })
-			}
+			tables = tables.filter({ $0 != table })
 		}
 
 		mutating func dropAllTables() {
-			DBTables.tableQueue.sync {
-				tables = []
-			}
+			tables = []
 		}
 
 		func hasTable(_ table: DBTable) -> Bool {
-			var exists = false
-
-			DBTables.tableQueue.sync {
-				exists = tables.contains(table)
-			}
-
-			return exists
+			return tables.contains(table)
 		}
 	}
 
-	private let dbCore = SQLiteCore()
-	private var lock = DispatchSemaphore(value: 0)
+	// nonisolated: SQLiteCore manages its own concurrency via blockQueue + Thread
+	private nonisolated let dbCore = SQLiteCore()
 	private var dbFileLocation: URL?
 	private var dbInstanceKey = ""
 	private var tables = DBTables()
 	private var indexes = [String: [String]]()
-	private let dbQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBQueue")
-	private let publisherQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBPublisherQueue")
 	private var syncingEnabled = false
 	private var publishers = [UpdatablePublisher]()
 	private lazy var autoDeleteTimer: RepeatingTimer = {
-		return RepeatingTimer(timeInterval: 60) {
-			self.autoDelete()
+		return RepeatingTimer(timeInterval: 60) { [weak self] in
+			guard let self = self else { return }
+			Task { await self.autoDelete() }
 		}
 	}()
 
@@ -126,10 +112,15 @@ public final class AgileDB {
 
 	- parameter location: Optional file location if different than the default.
 	*/
-	public init(fileLocation: URL? = nil) {
+	public init(fileLocation: URL? = nil, isDebugging: Bool = false) {
 		dbFileLocation = fileLocation
+		self.isDebugging = isDebugging
 		dbCore.qualityOfService = .userInteractive
 		dbCore.start()
+	}
+
+	var fileLocation: URL? {
+		dbFileLocation
 	}
 
 	// MARK: - Open / Close
@@ -141,23 +132,17 @@ public final class AgileDB {
 	- returns: Bool Returns if the database could be successfully opened.
 	*/
 	@discardableResult
-	public func open(_ location: URL? = nil) -> Bool {
-		let dbFileLocation = location ?? self.dbFileLocation ?? URL(fileURLWithPath: defaultFileLocation())
-		// if we already have a db file open at a different location, close it first
-		if dbCore.isOpen && dbFileLocation != dbFileLocation {
-			close()
-		}
-
+	public func open(_ location: URL? = nil) async -> Bool {
 		if let location = location {
+			if dbCore.isOpen { close() }
 			self.dbFileLocation = location
 		}
 
-		let openResults = openDB()
-		if case .success(_) = openResults {
+		let openResults = await openDB()
+		if case .success = openResults {
 			return true
-		} else {
-			return false
 		}
+		return false
 	}
 
 	/**
@@ -165,68 +150,10 @@ public final class AgileDB {
 	*/
 	public func close() {
 		autoDeleteTimer.suspend()
-		dbQueue.sync { () -> Void in
-			dbCore.close()
-		}
+		dbCore.close()
 	}
 
 	// MARK: - Keys
-
-	/**
-	Checks if the given table contains the given key.
-
-	- parameter table: The table to search.
-	- parameter key: The key to look for.
-
-	- returns: Bool? Returns if the key exists in the table. Is nil when database could not be opened or other error occured.
-	*/
-	public func tableHasKey(table: DBTable, key: String) -> Bool? {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return nil
-		}
-
-		if !tables.hasTable(table) {
-			return false
-		}
-
-		let sql = "select 1 from \(table) where key = '\(key)'"
-		let results = sqlSelect(sql)
-		if let results = results {
-			return results.isNotEmpty
-		}
-
-		return nil
-	}
-
-	/**
-	 Checks if the given table contains all the given key.s
-
-	 - parameter table: The table to search.
-	 - parameter keys: The keys to look for.
-
-	 - returns: Bool? Returns if the key exists in the table. Is nil when database could not be opened or other error occured.
-	 */
-	public func tableHasAllKeys(table: DBTable, keys: [String]) -> Bool? {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return nil
-		}
-
-		if !tables.hasTable(table) {
-			return false
-		}
-
-		let keyString = keys.map({ "'\($0)'" }).joined(separator: ",")
-
-		let sql = "select 1 from \(table) where key in (\(keyString))"
-		let results = sqlSelect(sql)
-		if let results = results {
-			return results.count == keys.count
-		}
-
-		return nil
-	}
 
 	/**
 	 Asynchronously checks if the given table contains the given key.
@@ -237,23 +164,32 @@ public final class AgileDB {
 	  - returns: Bool
 	  - throws: DBError
 	  */
-
 	public func tableHasKey(table: DBTable, key: String) async throws -> Bool {
-		let results = await bridgingTableHasKey(table: table, key: key)
-		switch results {
-		case .success(let hasKey):
-			return hasKey
-		case .failure(let error):
-			throw error
-		}
+		let openResults = await openDB()
+		if case .failure(let error) = openResults { throw error }
+		if !tables.hasTable(table) { return false }
+		let sql = "select 1 from \(table) where key = '\(key)'"
+		guard let results = await sqlRows(sql) else { throw DBError.other(0) }
+		return results.isNotEmpty
 	}
 
-	private func bridgingTableHasKey(table: DBTable, key: String) async -> BoolResults {
-		await withCheckedContinuation { continuation in
-			self.tableHasKey(table: table, key: key) { results in
-				continuation.resume(returning: results)
-			}
-		}
+	/**
+	 Asynchronously checks if the given table contains all the given keys.
+
+	 - parameter table: The table to search.
+	 - parameter keys: The keys to look for.
+
+	  - returns: Bool
+	  - throws: DBError
+	  */
+	public func tableHasAllKeys(table: DBTable, keys: [String]) async throws -> Bool {
+		let openResults = await openDB()
+		if case .failure(let error) = openResults { throw error }
+		if !tables.hasTable(table) { return false }
+		let keyString = keys.map({ "'\($0)'" }).joined(separator: ",")
+		let sql = "select 1 from \(table) where key in (\(keyString))"
+		guard let results = await sqlRows(sql) else { throw DBError.other(0) }
+		return results.count == keys.count
 	}
 
 	/**
@@ -264,20 +200,16 @@ public final class AgileDB {
 	- parameter queue: Dispatch queue to use when running the completion closure. Default value is main queue.
 	- parameter completion: Closure to use for results.
 
-	- returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
+	- returns: DBCommandToken that can be used to cancel the command before it executes. Nil if the database file cannot be opened.
 	*/
 	@discardableResult
 	public func tableHasKey(table: DBTable, key: String, queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return nil
-		}
+		let openResults = openDB_sync()
+		if case .failure = openResults { return nil }
 
 		if !tables.hasTable(table) {
 			let dispatchQueue = queue ?? DispatchQueue.main
-			dispatchQueue.async {
-				completion(Result<Bool, DBError>.success(false))
-			}
+			dispatchQueue.async { completion(.success(false)) }
 			return DBCommandToken(database: self, identifier: 0)
 		}
 
@@ -285,49 +217,14 @@ public final class AgileDB {
 		let blockReference = dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
 			let dispatchQueue = queue ?? DispatchQueue.main
 			dispatchQueue.async {
-				let results: BoolResults
-
 				switch rowResults {
-				case .success(let rows):
-					results = .success(rows.isNotEmpty)
-
-				case .failure(let error):
-					results = .failure(error)
+				case .success(let rows): completion(.success(rows.isNotEmpty))
+				case .failure(let error): completion(.failure(error))
 				}
-
-				completion(results)
 			}
 		})
 
 		return DBCommandToken(database: self, identifier: blockReference)
-	}
-
-	/**
-	 Asynchronously checks if the given table contains the all the given keys.
-
-	 - parameter table: The table to search.
-	 - parameter keys: The keys to look for.
-
-	  - returns: Bool
-	  - throws: DBError
-	  */
-
-	public func tableHasAllKeys(table: DBTable, keys: [String]) async throws -> Bool {
-		let results = await bridgingTableHasAllKeys(table: table, keys: keys)
-		switch results {
-		case .success(let hasKeys):
-			return hasKeys
-		case .failure(let error):
-			throw error
-		}
-	}
-
-	private func bridgingTableHasAllKeys(table: DBTable, keys: [String]) async -> BoolResults {
-		await withCheckedContinuation { continuation in
-			self.tableHasAllKeys(table: table, keys: keys) { results in
-				continuation.resume(returning: results)
-			}
-		}
 	}
 
 	/**
@@ -338,40 +235,28 @@ public final class AgileDB {
 	 - parameter queue: Dispatch queue to use when running the completion closure. Default value is main queue.
 	 - parameter completion: Closure to use for results.
 
-	 - returns: DBActivityToken Returns a DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
+	 - returns: DBCommandToken that can be used to cancel the command before it executes. Nil if the database file cannot be opened.
 	 */
 	@discardableResult
 	public func tableHasAllKeys(table: DBTable, keys: [String], queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return nil
-		}
+		let openResults = openDB_sync()
+		if case .failure = openResults { return nil }
 
 		if !tables.hasTable(table) {
 			let dispatchQueue = queue ?? DispatchQueue.main
-			dispatchQueue.async {
-				completion(Result<Bool, DBError>.success(false))
-			}
+			dispatchQueue.async { completion(.success(false)) }
 			return DBCommandToken(database: self, identifier: 0)
 		}
 
 		let keyString = keys.map({ "'\($0)'" }).joined(separator: ",")
-
 		let sql = "select 1 from \(table) where key in (\(keyString))"
 		let blockReference = dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
 			let dispatchQueue = queue ?? DispatchQueue.main
 			dispatchQueue.async {
-				let results: BoolResults
-
 				switch rowResults {
-				case .success(let rows):
-					results = .success(rows.count == keys.count)
-
-				case .failure(let error):
-					results = .failure(error)
+				case .success(let rows): completion(.success(rows.count == keys.count))
+				case .failure(let error): completion(.failure(error))
 				}
-
-				completion(results)
 			}
 		})
 
@@ -379,101 +264,51 @@ public final class AgileDB {
 	}
 
 	/**
-	Returns an array of keys from the given table sorted in the way specified matching the given conditions. All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
-
-	Unsorted Example:
-
-	let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
-	if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
-		// use keys
-	} else {
-		// handle error
-	}
-
-	- parameter table: The DBTable to return keys from.
-	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
-	- parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-	- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
-
-	- returns: [String]? Returns an array of keys from the table. Is nil when database could not be opened or other error occured.
-	*/
-	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> [String]? {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return nil
-		}
-
-		if !tables.hasTable(table) {
-			return []
-		}
-
-		guard let sql = keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else { return [] }
-
-		if let results = sqlSelect(sql) {
-			return results.map({ $0.values[0] as! String })
-		}
-
-		return nil
-	}
-
-	/**
-	 Asynchronously keys in given table.
+	 Asynchronously returns keys in given table.
 
 	  - parameter table: The table to return keys from.
 	  - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 	  - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-	  - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+	  - parameter validateObjects: Optional bool. Default value is false.
 
 	  - returns: [String]
 	  - throws: DBError
 	  */
-
 	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> [String] {
-		let results = await bridgingKeysInTable(table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
-		switch results {
-		case .success(let keys):
-			return keys
-		case .failure(let error):
-			throw error
-		}
-	}
+		let openResults = await openDB()
+		if case .failure(let error) = openResults { throw error }
+		if !tables.hasTable(table) { throw DBError.tableNotFound }
 
-	private func bridgingKeysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async -> KeyResults {
-		await withCheckedContinuation { continuation in
-			self.keysInTable(table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects) { results in
-				continuation.resume(returning: results)
-			}
+		guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else {
+			throw DBError.cannotParseData
+		}
+
+		let rowResults: RowResults = await withCheckedContinuation { continuation in
+			_ = dbCore.sqlSelect(sql) { continuation.resume(returning: $0) }
+		}
+
+		switch rowResults {
+		case .success(let rows): return rows.map({ $0.values[0] as! String })
+		case .failure(let error): throw error
 		}
 	}
 
 	/**
-	Asynchronously returns the keys in the given table.
-
-	Runs a query asynchronously and calls the completion closure with the results. Successful results are keys from the given table sorted in the way specified matching the given conditions. All conditions in the same set are ANDed together. Separate sets are ORed against each other.  (set:0 AND set:0 AND set:0) OR (set:1 AND set:1 AND set:1) OR (set:2)
-
-	Unsorted Example:
-
-	let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
-	if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
-		// use keys
-	} else {
-		// handle error
-	}
+	Asynchronously returns the keys in the given table via a completion closure.
 
 	- parameter table: The table to return keys from.
 	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
-	- parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-	- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+	- parameter conditions: Optional array of DBConditions.
+	- parameter validateObjects: Optional bool. Default value is false.
 	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
-	- parameter completion: Closure with DBRowResults.
+	- parameter completion: Closure with KeyResults.
 
-	- returns: DBCommandToken that can be used to cancel the command before it executes If the database file cannot be opened nil is returned.
+	- returns: DBCommandToken that can be used to cancel the command before it executes.
 	*/
-
 	@discardableResult
 	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping (KeyResults) -> Void) -> DBCommandToken? {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
+		let openResults = openDB_sync()
+		if case .failure = openResults {
 			completion(.failure(.cannotOpenFile))
 			return nil
 		}
@@ -483,48 +318,40 @@ public final class AgileDB {
 			return DBCommandToken(database: self, identifier: 0)
 		}
 
-		guard let sql = keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else {
-			completion(.failure(.cannotParseData))
-			return nil
+		// keysInTableSQL needs actor isolation; run async and capture the token
+		Task {
+			guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else {
+				(queue ?? .main).async { completion(.failure(.cannotParseData)) }
+				return
+			}
+
+			_ = dbCore.sqlSelect(sql) { rowResults in
+				let dispatchQueue = queue ?? DispatchQueue.main
+				dispatchQueue.async {
+					switch rowResults {
+					case .success(let rows): completion(.success(rows.map({ $0.values[0] as! String })))
+					case .failure(let error): completion(.failure(error))
+					}
+				}
+			}
 		}
 
-		let blockReference = dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
-			let dispatchQueue = queue ?? DispatchQueue.main
-			dispatchQueue.async {
-				let results: KeyResults
-
-				switch rowResults {
-				case .success(let rows):
-					results = .success(rows.map({ $0.values[0] as! String }))
-
-				case .failure(let error):
-					results = .failure(error)
-				}
-
-				completion(results)
-			}
-		})
-
-		return DBCommandToken(database: self, identifier: blockReference)
+		return DBCommandToken(database: self, identifier: 0)
 	}
 
 	/**
-	 Returns a  Publisher for generic DBResults. Uses the table of the DBObject for results.
+	 Returns a Publisher for generic DBResults.
 
 	 - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
-	 - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-	 - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
+	 - parameter conditions: Optional array of DBConditions.
+	 - parameter validateObjects: Default value is false.
 
-	 - returns: DBResultssPublisher
+	 - returns: DBResultsPublisher
 	 */
-
 	@discardableResult
 	public func publisher<T>(sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> DBResultsPublisher<T> {
 		let publisher = DBResultsPublisher<T>(db: self, table: T.table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
-		dbQueue.sync {
-			publishers.append(publisher)
-		}
-
+		publishers.append(publisher)
 		return publisher
 	}
 
@@ -532,20 +359,15 @@ public final class AgileDB {
 	/**
 	Sets the indexes desired for a given table.
 
-	Example:
-
-	AgileDB.setIndexesForTable(kTransactionsTable, to: ["accountKey","date"]) // index accountKey and date each individually
-
 	- parameter table: The table to return keys from.
-	- parameter indexes: An array of table properties to be indexed. An array entry can be compound.
+	- parameter indexes: An array of table properties to be indexed.
 	*/
 	@discardableResult
-	public func setIndexesForTable(_ table: DBTable, to indexes: [String]) -> BoolResults {
-		let openResults = openDB()
-		if case .success(_) = openResults {
+	public func setIndexesForTable(_ table: DBTable, to indexes: [String]) async -> BoolResults {
+		let openResults = await openDB()
+		if case .success = openResults {
 			self.indexes[table.name] = indexes
-			// TODO: Return results from call
-			createIndexesForTable(table)
+			await createIndexesForTable(table)
 		}
 
 		return openResults
@@ -553,23 +375,17 @@ public final class AgileDB {
 
 	// MARK: - Set Values
 	/**
-	Sets the value of an entry in the given table for a given key optionally deleted automatically after a given date. Supported values are dictionaries that consist of String, Int, Double and arrays of these. If more complex objects need to be stored, a string value of those objects need to be stored.
+	Sets the value of an entry in the given table for a given key.
 
-	Example:
-
-	if !AgileDB.setValueInTable("table5", for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil) {
-		// handle error
-	}
-
-	- parameter table: The table to return keys from.
+	- parameter table: The table to set the value in.
 	- parameter key: The key for the entry.
-	- parameter value: A JSON string representing the value to be stored. Top level object provided must be a dictionary. If a key node is in the value, it will be ignored.
-	- parameter autoDeleteAfter: Optional date of when the value should be automatically deleted from the table.
+	- parameter value: A JSON string representing the value to be stored.
+	- parameter autoDeleteAfter: Optional date of when the value should be automatically deleted.
 
 	- returns: Bool If the value was set successfully.
 	*/
 	@discardableResult
-	public func setValueInTable(_ table: DBTable, for key: String, to value: String, autoDeleteAfter: Date? = nil) -> Bool {
+	public func setValueInTable(_ table: DBTable, for key: String, to value: String, autoDeleteAfter: Date? = nil) async -> Bool {
 		assert(key != "", "key must be provided")
 		assert(value != "", "value must be provided")
 
@@ -578,34 +394,28 @@ public final class AgileDB {
 		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
 		assert(objectValues != nil, "Value must be valid JSON string that is a dictionary for the top-level object")
 
-		return setValueInTable(table, for: key, to: objectValues!, autoDeleteAfter: autoDeleteAfter)
+		return await setValueInTable(table, for: key, to: objectValues!, autoDeleteAfter: autoDeleteAfter)
 	}
 
 	/**
-	Sets the value of an entry in the given table for a given key optionally deleted automatically after a given date. Supported values are dictionaries with string keys and values that consist of String, Int, Double, Bool and arrays of String, Int, and Double. If more complex objects need to be stored, a string value of those objects need to be stored.
+	Sets the value of an entry in the given table for a given key.
 
-	Example:
-
-	if !AgileDB.setValueInTable("table5", for: "testKey1", to: dictValue, autoDeleteAfter: nil) {
-		// handle error
-	}
-
-	- parameter table: The table to return keys from.
+	- parameter table: The table to set the value in.
 	- parameter key: The key for the entry.
-	- parameter value: A dictionary object representing the value to be stored. If a key named "key" exists, it will be ignored.
-	- parameter autoDeleteAfter: Optional date of when the value should be automatically deleted from the table.
+	- parameter value: A dictionary object representing the value to be stored.
+	- parameter autoDeleteAfter: Optional date of when the value should be automatically deleted.
 
 	- returns: Bool If the value was set successfully.
 	*/
 	@discardableResult
-	public func setValueInTable(_ table: DBTable, for key: String, to objectValues: [String: AnyObject], autoDeleteAfter: Date? = nil) -> Bool {
+	public func setValueInTable(_ table: DBTable, for key: String, to objectValues: [String: AnyObject], autoDeleteAfter: Date? = nil) async -> Bool {
 		let now = AgileDB.stringValueForDate(Date())
 		let deleteDateTime = (autoDeleteAfter == nil ? "NULL" : "'" + AgileDB.stringValueForDate(autoDeleteAfter!) + "'")
 
-		let successful = setValue(table: table, key: key, objectValues: objectValues, addedDateTime: now, updatedDateTime: now, deleteDateTime: deleteDateTime, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
+		let successful = await setValue(table: table, key: key, objectValues: objectValues, addedDateTime: now, updatedDateTime: now, deleteDateTime: deleteDateTime, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
 
 		if successful {
-			updatePublisherResults(for: key, in: table)
+			await updatePublisherResults(for: key, in: table)
 		}
 
 		return successful
@@ -613,243 +423,44 @@ public final class AgileDB {
 
 	// MARK: - Return Values
 	/**
-	Returns the JSON value of what was stored for a given table and key.
+	Asynchronously returns the JSON value of what was stored for a given table and key.
 
-	Example:
-	if let jsonValue = AgileDB.valueFromTable("table1", for: "58D200A048F9") {
-		// process JSON text
-	} else {
-		// handle error
-	}
-
-	- parameter table: The table to return keys from.
+	- parameter table: The table to return the value from.
 	- parameter key: The key for the entry.
 
-	- returns: JSON value of what was stored. Is nil when database could not be opened or other error occured.
+	- returns: String JSON representation.
+	- throws: DBError
 	*/
-	public func valueFromTable(_ table: DBTable, for key: String) -> String? {
-		if let dictionaryValue = dictValueFromTable(table, for: key) {
-			let dataValue = try? JSONSerialization.data(withJSONObject: dictionaryValue, options: JSONSerialization.WritingOptions(rawValue: 0))
-			let jsonValue = String(data: dataValue!, encoding: .utf8)
-			return jsonValue! as String
-		}
-
-		return nil
-	}
-
-	/**
-	  Asynchronously returns the value for a given table and key.
-
-	  - parameter table: The table to return keys from.
-	  - parameter key: The key for the entry.
-
-	  - returns: String
-	  - throws: DBError
-	  */
-
 	public func valueFromTable(_ table: DBTable, for key: String) async throws -> String {
-		let results = await bridgingValueFromTable(table, for: key)
-
-		switch results {
-		case .success(let value):
-			return value
-		case .failure(let error):
-			throw error
+		let dictionaryValue = try await dictValueFromTable(table, for: key)
+		guard let dataValue = try? JSONSerialization.data(withJSONObject: dictionaryValue, options: JSONSerialization.WritingOptions(rawValue: 0)),
+			  let jsonValue = String(data: dataValue, encoding: .utf8) else {
+			throw DBError.other(0)
 		}
-	}
-
-	private func bridgingValueFromTable(_ table: DBTable, for key: String) async -> JsonResults {
-		await withCheckedContinuation { continuation in
-			self.valueFromTable(table, for: key) { results in
-				continuation.resume(returning: results)
-			}
-		}
-	}
-
-	/**
-	Asynchronously returns the value for a given table and key.
-
-	Runs a query asynchronously and calls the completion closure with the results. Successful result is a String.
-
-	- parameter table: The table to return keys from.
-	- parameter key: The key for the entry.
-	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
-	- parameter completion: Closure to use for JSON results.
-
-	- returns: Returns a DBCommandToken that can be used to cancel the command before it executes. If the database file cannot be opened or table does not exist nil is returned.
-
-	*/
-	@discardableResult
-	public func valueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (JsonResults) -> Void) -> DBCommandToken? {
-		let openResults = openDB()
-		if case .failure(_) = openResults, !tables.hasTable(table) {
-			return nil
-		}
-
-		let (sql, columns) = dictValueForKeySQL(table: table, key: key, includeDates: false)
-
-		let blockReference = dbCore.sqlSelect(sql, completion: { [weak self] (rowResults) -> Void in
-			guard let self = self else { return }
-
-			let dispatchQueue = queue ?? DispatchQueue.main
-			dispatchQueue.async {
-				let results: Result<String, DBError>
-
-				switch rowResults {
-				case .success(let rows):
-					guard let dictionaryValue = self.dictValueResults(table: table, key: key, results: rows, columns: columns)
-					, let dataValue = try? JSONSerialization.data(withJSONObject: dictionaryValue, options: JSONSerialization.WritingOptions(rawValue: 0))
-					, let jsonValue = String(data: dataValue, encoding: .utf8)
-						else {
-						results = .failure(.other(0))
-						completion(results)
-						return
-					}
-
-					results = .success(jsonValue)
-
-				case .failure(let error):
-					results = .failure(error)
-				}
-
-				completion(results)
-			}
-		})
-
-		return DBCommandToken(database: self, identifier: blockReference)
-	}
-
-	/**
-	Returns the dictionary value of what was stored for a given table and key.
-
-	Example:
-	if let dictValue = AgileDB.dictValueForKey(table: "table1", key: "58D200A048F9") {
-		// process dictionary
-	} else {
-		// handle error
-	}
-
-	- parameter table: The table to return keys from.
-	- parameter key: The key for the entry.
-
-	- returns: [String:AnyObject]? Dictionary value of what was stored. Is nil when database could not be opened or other error occured.
-	*/
-	public func dictValueFromTable(_ table: DBTable, for key: String) -> [String: AnyObject]? {
-		return dictValueFromTable(table, for: key, includeDates: false)
+		return jsonValue
 	}
 
 	/**
 	  Asynchronously returns the dictionary value of what was stored for a given table and key.
 
-	  - parameter table: The table to return keys from.
+	  - parameter table: The table to return the value from.
 	  - parameter key: The key for the entry.
 
 	  - returns: [String: AnyObject]
 	  - throws: DBError
 	  */
-
 	public func dictValueFromTable(_ table: DBTable, for key: String) async throws -> [String: AnyObject] {
-		let results = await bridgingDictValueFromTable(table, for: key)
-
-		switch results {
-		case .success(let value):
-			return value
-		case .failure(let error):
-			throw error
+		guard let value = await dictValueFromTable(table, for: key, includeDates: false) else {
+			throw DBError.other(0)
 		}
-	}
-
-	private func bridgingDictValueFromTable(_ table: DBTable, for key: String) async -> DictResults {
-		await withCheckedContinuation { continuation in
-			self.dictValueFromTable(table, for: key) { results in
-				continuation.resume(returning: results)
-			}
-		}
-	}
-
-	/**
-	Returns the dictionary value of what was stored for a given table and key.
-
-	Example:
-	if let dictValue = AgileDB.dictValueForKey(table: "table1", key: "58D200A048F9") {
-		// process dictionary
-	} else {
-		// handle error
-	}
-
-	- parameter table: The table to return keys from.
-	- parameter key: The key for the entry.
-	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
-	- parameter completion: Closure to use for dictionary results.
-
-	- returns: Returns a DBCommandToken that can be used to cancel the command before it executes. If the database file cannot be opened or table does not exist nil is returned.
-	*/
-	@discardableResult
-	public func dictValueFromTable(_ table: DBTable, for key: String, queue: DispatchQueue? = nil, completion: @escaping (DictResults) -> Void) -> DBCommandToken? {
-		let openResults = openDB()
-		if case .failure(_) = openResults, !tables.hasTable(table) {
-			return nil
-		}
-
-		let (sql, columns) = dictValueForKeySQL(table: table, key: key, includeDates: false)
-
-		let blockReference = dbCore.sqlSelect(sql, completion: { [weak self] (rowResults) -> Void in
-			guard let self = self else { return }
-
-			let dispatchQueue = queue ?? DispatchQueue.main
-			dispatchQueue.async {
-				let results: Result<[String: AnyObject], DBError>
-
-				switch rowResults {
-				case .success(let rows):
-					guard let dictionaryValue = self.dictValueResults(table: table, key: key, results: rows, columns: columns)
-						else {
-						results = .failure(.other(0))
-						completion(results)
-						return
-					}
-
-					results = .success(dictionaryValue)
-
-				case .failure(let error):
-					results = .failure(error)
-				}
-
-				completion(results)
-			}
-		})
-
-		return DBCommandToken(database: self, identifier: blockReference)
+		return value
 	}
 
 	// MARK: - Delete
 	/**
 	Delete the value from the given table for the given key.
 
-	- parameter table: The table to return keys from.
-	- parameter key: The key for the entry.
-
-	- returns: Bool Value was successfuly removed.
-	*/
-	@discardableResult
-	public func deleteFromTable(_ table: DBTable, for key: String) -> Bool {
-		assert(key != "", "key must be provided")
-		var deleted = false
-
-		publisherQueue.sync {
-			deleted = deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
-			if deleted {
-				updatePublisherResults(for: key, in: table)
-			}
-		}
-
-		return deleted
-	}
-
-	/**
-	Asynchronously delete the value from the given table for the given key.
-
-	- parameter table: The table to return keys from.
+	- parameter table: The table to delete from.
 	- parameter key: The key for the entry.
 
 	- returns: Bool Value was successfuly removed.
@@ -858,33 +469,32 @@ public final class AgileDB {
 	public func deleteFromTable(_ table: DBTable, for key: String) async -> Bool {
 		assert(key != "", "key must be provided")
 
-		return publisherQueue.sync { () -> Bool in
-			let deleted = deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
-			if deleted {
-				updatePublisherResults(for: key, in: table)
-			}
-
-			return deleted
+		let deleted = await deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
+		if deleted {
+			await updatePublisherResults(for: key, in: table)
 		}
+
+		return deleted
 	}
 
 	/**
 	Removes the given table and associated values.
 
-	- parameter table: The table to return keys from.
+	- parameter table: The table to remove.
 
 	- returns: Bool Table was successfuly removed.
 	*/
 	@discardableResult
-	public func dropTable(_ table: DBTable) -> Bool {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
+	public func dropTable(_ table: DBTable) async -> Bool {
+		let openResults = await openDB()
+		if case .failure = openResults {
 			return false
 		}
 
-		if !sqlExecute("drop table \(table)")
-			|| !sqlExecute("drop table \(table)_arrayValues")
-			|| !sqlExecute("delete from __tableArrayColumns where tableName = '\(table)'") {
+		let d1 = await sqlExecute("drop table \(table)")
+		let d2 = await sqlExecute("drop table \(table)_arrayValues")
+		let d3 = await sqlExecute("delete from __tableArrayColumns where tableName = '\(table)'")
+		if !d1 || !d2 || !d3 {
 			return false
 		}
 
@@ -892,13 +502,13 @@ public final class AgileDB {
 
 		if syncingEnabled && unsyncedTables.doesNotContain(table) {
 			let now = AgileDB.stringValueForDate(Date())
-			if !sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(dbInstanceKey)','\(dbInstanceKey)','\(table)','X',NULL)") {
+			if !(await sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(dbInstanceKey)','\(dbInstanceKey)','\(table)','X',NULL)")) {
 				return false
 			}
 
-			let lastID = lastInsertID()
+			let lastID = await lastInsertID()
 
-			if !sqlExecute("delete from __synclog where tableName = '\(table)' and rowid < \(lastID)") {
+			if !(await sqlExecute("delete from __synclog where tableName = '\(table)' and rowid < \(lastID)")) {
 				return false
 			}
 		}
@@ -914,17 +524,15 @@ public final class AgileDB {
 	- returns: Bool Tables were successfuly removed.
 	*/
 	@discardableResult
-	public func dropAllTables() -> Bool {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
+	public func dropAllTables() async -> Bool {
+		let openResults = await openDB()
+		if case .failure = openResults {
 			return false
 		}
 
-		var successful = true
 		let dbTables = tables.allTables()
 		for table in dbTables {
-			successful = dropTable(table)
-			if !successful {
+			if !(await dropTable(table)) {
 				return false
 			}
 		}
@@ -936,43 +544,34 @@ public final class AgileDB {
 
 	// MARK: - Sync
 	/**
-	Current syncing status. Nil if the database could not be opened.
+	Current syncing status. Nil if the database has not been opened yet.
 	*/
 	public var isSyncingEnabled: Bool? {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return nil
-		}
-
-		return syncingEnabled
+		dbCore.isOpen ? syncingEnabled : nil
 	}
 
 	/**
-	Enables syncing. Once enabled, a log is created for all current values in the tables.
+	Enables syncing.
 
 	- returns: Bool If syncing was successfully enabled.
 	*/
-	public func enableSyncing() -> Bool {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
+	public func enableSyncing() async -> Bool {
+		let openResults = await openDB()
+		if case .failure = openResults { return false }
+
+		if syncingEnabled { return true }
+
+		if !(await sqlExecute("create table __synclog(timestamp text, sourceDB text, originalDB text, tableName text, activity text, key text)")) {
 			return false
 		}
-
-		if syncingEnabled {
-			return true
-		}
-
-		if !sqlExecute("create table __synclog(timestamp text, sourceDB text, originalDB text, tableName text, activity text, key text)") {
-			return false
-		}
-		sqlExecute("create index __synclog_index on __synclog(tableName,key)")
-		sqlExecute("create index __synclog_source on __synclog(sourceDB,originalDB)")
-		sqlExecute("create table __unsyncedTables(tableName text)")
+		await sqlExecute("create index __synclog_index on __synclog(tableName,key)")
+		await sqlExecute("create index __synclog_source on __synclog(sourceDB,originalDB)")
+		await sqlExecute("create table __unsyncedTables(tableName text)")
 
 		let now = AgileDB.stringValueForDate(Date())
 		let dbTables = tables.allTables()
 		for table in dbTables {
-			if !sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) select '\(now)','\(dbInstanceKey)','\(dbInstanceKey)','\(table.name)','U',key from \(table.name)") {
+			if !(await sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) select '\(now)','\(dbInstanceKey)','\(dbInstanceKey)','\(table.name)','U',key from \(table.name)")) {
 				return false
 			}
 		}
@@ -986,22 +585,19 @@ public final class AgileDB {
 
 	- returns: Bool If syncing was successfully disabled.
 	*/
-	public func disableSyncing() -> Bool {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return false
-		}
+	public func disableSyncing() async -> Bool {
+		let openResults = await openDB()
+		if case .failure = openResults { return false }
 
-		if !syncingEnabled {
-			return true
-		}
+		if !syncingEnabled { return true }
 
-		if !sqlExecute("drop table __synclog") || !sqlExecute("drop table __unsyncedTables") {
+		let ds1 = await sqlExecute("drop table __synclog")
+		let ds2 = await sqlExecute("drop table __unsyncedTables")
+		if !ds1 || !ds2 {
 			return false
 		}
 
 		syncingEnabled = false
-
 		return true
 	}
 
@@ -1013,11 +609,9 @@ public final class AgileDB {
 	- returns: Bool If list was set successfully.
 	*/
 	@discardableResult
-	public func setUnsyncedTables(_ tables: [DBTable]) -> Bool {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return false
-		}
+	public func setUnsyncedTables(_ tables: [DBTable]) async -> Bool {
+		let openResults = await openDB()
+		if case .failure = openResults { return false }
 
 		if !syncingEnabled {
 			print("syncing must be enabled before setting unsynced tables")
@@ -1026,7 +620,7 @@ public final class AgileDB {
 
 		unsyncedTables = [DBTable]()
 		for table in tables {
-			sqlExecute("delete from __synclog where tableName = '\(table)'")
+			await sqlExecute("delete from __synclog where tableName = '\(table)'")
 			unsyncedTables.append(table)
 		}
 
@@ -1034,19 +628,17 @@ public final class AgileDB {
 	}
 
 	/**
-	Creates a sync file that can be used on another AgileDB instance to sync data. This is a synchronous call.
+	Creates a sync file that can be used on another AgileDB instance to sync data.
 
-	- parameter filePath: The full path, including the file itself, to be used for the log file.
-	- parameter lastSequence: The last sequence used for the given target  Initial sequence is 0.
-	- parameter targetDBInstanceKey: The dbInstanceKey of the target database. Use the dbInstanceKey method to get the DB's instanceKey.
+	- parameter filePath: The full path to be used for the log file.
+	- parameter lastSequence: The last sequence used for the given target.
+	- parameter targetDBInstanceKey: The dbInstanceKey of the target database.
 
-	- returns: (Bool,Int) If the file was successfully created and the lastSequence that should be used in subsequent calls to this instance for the given targetDBInstanceKey.
+	- returns: (Bool,Int) If the file was successfully created and the lastSequence to use in subsequent calls.
 	*/
-	public func createSyncFileAtURL(_ localURL: URL!, lastSequence: Int, targetDBInstanceKey: String) -> (Bool, Int) {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return (false, lastSequence)
-		}
+	public func createSyncFileAtURL(_ localURL: URL!, lastSequence: Int, targetDBInstanceKey: String) async -> (Bool, Int) {
+		let openResults = await openDB()
+		if case .failure = openResults { return (false, lastSequence) }
 
 		if !syncingEnabled {
 			print("syncing must be enabled before creating sync file")
@@ -1066,53 +658,50 @@ public final class AgileDB {
 		FileManager.default.createFile(atPath: filePath, contents: nil, attributes: nil)
 
 		if let fileHandle = FileHandle(forWritingAtPath: filePath) {
-			if let results = sqlSelect("select rowid,timestamp,originalDB,tableName,activity,key from __synclog where rowid > \(lastSequence) and sourceDB <> '\(targetDBInstanceKey)' and originalDB <> '\(targetDBInstanceKey)' order by rowid") {
-				var lastRowID = lastSequence
-				fileHandle.write("{\"sourceDB\":\"\(dbInstanceKey)\",\"logEntries\":[\n".dataValue())
-				var firstEntry = true
-				for row in results {
-					lastRowID = row.values[0] as! Int
-					let timeStamp = row.values[1] as! String
-					let originalDB = row.values[2] as! String
-					let tableName = row.values[3] as! String
-					let activity = row.values[4] as! String
-					let key = row.values[5] as! String?
-
-					var entryDict = [String: AnyObject]()
-					entryDict["timeStamp"] = timeStamp as AnyObject
-					if originalDB != dbInstanceKey {
-						entryDict["originalDB"] = originalDB as AnyObject
-					}
-					entryDict["tableName"] = tableName as AnyObject
-					entryDict["activity"] = activity as AnyObject
-					if let key = key {
-						entryDict["key"] = key as AnyObject
-						if activity == "U" {
-							guard let dictValue = dictValueFromTable(DBTable(name: tableName), for: key, includeDates: true) else { continue }
-							entryDict["value"] = dictValue as AnyObject
-						}
-					}
-
-					let dataValue = try? JSONSerialization.data(withJSONObject: entryDict, options: JSONSerialization.WritingOptions(rawValue: 0))
-					if firstEntry {
-						firstEntry = false
-					} else {
-						fileHandle.write("\n,".dataValue())
-					}
-
-					fileHandle.write(dataValue!)
-				}
-
-				fileHandle.write("\n],\"lastSequence\":\(lastRowID)}".dataValue())
-				fileHandle.closeFile()
-				return (true, lastRowID)
-			} else {
-				do {
-					try FileManager.default.removeItem(atPath: filePath)
-				} catch _ {
-					return (false, lastSequence)
-				}
+			guard let results = await sqlRows("select rowid,timestamp,originalDB,tableName,activity,key from __synclog where rowid > \(lastSequence) and sourceDB <> '\(targetDBInstanceKey)' and originalDB <> '\(targetDBInstanceKey)' order by rowid") else {
+				try? FileManager.default.removeItem(atPath: filePath)
+				return (false, lastSequence)
 			}
+
+			var lastRowID = lastSequence
+			fileHandle.write("{\"sourceDB\":\"\(dbInstanceKey)\",\"logEntries\":[\n".dataValue())
+			var firstEntry = true
+			for row in results {
+				lastRowID = row.values[0] as! Int
+				let timeStamp = row.values[1] as! String
+				let originalDB = row.values[2] as! String
+				let tableName = row.values[3] as! String
+				let activity = row.values[4] as! String
+				let key = row.values[5] as! String?
+
+				var entryDict = [String: AnyObject]()
+				entryDict["timeStamp"] = timeStamp as AnyObject
+				if originalDB != dbInstanceKey {
+					entryDict["originalDB"] = originalDB as AnyObject
+				}
+				entryDict["tableName"] = tableName as AnyObject
+				entryDict["activity"] = activity as AnyObject
+				if let key = key {
+					entryDict["key"] = key as AnyObject
+					if activity == "U" {
+						guard let dictValue = await dictValueFromTable(DBTable(name: tableName), for: key, includeDates: true) else { continue }
+						entryDict["value"] = dictValue as AnyObject
+					}
+				}
+
+				let dataValue = try? JSONSerialization.data(withJSONObject: entryDict, options: JSONSerialization.WritingOptions(rawValue: 0))
+				if firstEntry {
+					firstEntry = false
+				} else {
+					fileHandle.write("\n,".dataValue())
+				}
+
+				fileHandle.write(dataValue!)
+			}
+
+			fileHandle.write("\n],\"lastSequence\":\(lastRowID)}".dataValue())
+			fileHandle.closeFile()
+			return (true, lastRowID)
 		}
 
 		return (false, lastSequence)
@@ -1120,31 +709,28 @@ public final class AgileDB {
 
 
 	/**
-	Processes a sync file created by another instance of AgileDB. This is a synchronous call.
+	Processes a sync file created by another instance of AgileDB.
 
 	- parameter filePath: The path to the sync file.
 	- parameter syncProgress: Optional function that will be called periodically giving the percent complete.
 
-	- returns: (Bool,String,Int)  If the sync file was successfully processed,the instanceKey of the submiting DB, and the lastSequence that should be used in subsequent calls to the createSyncFile method of the instance that was used to create this file. If the database couldn't be opened or syncing hasn't been enabled, then the instanceKey will be empty and the lastSequence will be equal to zero.
+	- returns: (Bool,String,Int) If the sync file was successfully processed, the instanceKey of the submiting DB, and the lastSequence.
 	*/
 	public typealias syncProgressUpdate = (_ percentComplete: Double) -> Void
-	public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpdate?) -> (Bool, String, Int) {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return (false, "", 0)
-		}
+	public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpdate?) async -> (Bool, String, Int) {
+		let openResults = await openDB()
+		if case .failure = openResults { return (false, "", 0) }
 
 		if !syncingEnabled {
 			print("syncing must be enabled before processing sync file")
 			return (false, "", 0)
 		}
 
-		autoDelete()
+		await autoDelete()
 
 		let filePath = localURL.path
 
-		if let _ = FileHandle(forReadingAtPath: filePath) {
-			// TODO: Stream in the file and parse as needed instead of parsing the entire thing at once to save on memory use
+		if FileHandle(forReadingAtPath: filePath) != nil {
 			let now = AgileDB.stringValueForDate(Date())
 			if let fileText = try? String(contentsOfFile: filePath, encoding: String.Encoding.utf8) {
 				let dataValue = fileText.dataValue()
@@ -1168,12 +754,11 @@ public final class AgileDB {
 						let tableName = entry["tableName"] as! String
 						let originalDB = (entry["originalDB"] == nil ? sourceDB : entry["originalDB"] as! String)
 
-						// for entry activity U,D only process log entry if no local entry for same table/key that is greater than one received
 						if activity == "D" || activity == "U" {
-							if let key = entry["key"] as? String, let results = sqlSelect("select 1 from __synclog where tableName = '\(tableName)' and key = '\(key)' and timestamp > '\(timeStamp)'") {
+							if let key = entry["key"] as? String,
+							   let results = await sqlRows("select 1 from __synclog where tableName = '\(tableName)' and key = '\(key)' and timestamp > '\(timeStamp)'") {
 								if results.isEmpty {
 									if activity == "U" {
-										// strip out the dates to send separately
 										var objectValues = entry["value"] as! [String: AnyObject]
 										let addedDateTime = objectValues["addedDateTime"] as! String
 										let updatedDateTime = objectValues["updatedDateTime"] as! String
@@ -1182,25 +767,22 @@ public final class AgileDB {
 										objectValues.removeValue(forKey: "updatedDateTime")
 										objectValues.removeValue(forKey: "deleteDateTime")
 
-										_ = setValue(table: DBTable(name: tableName), key: key, objectValues: objectValues, addedDateTime: addedDateTime, updatedDateTime: updatedDateTime, deleteDateTime: deleteDateTime, sourceDB: sourceDB, originalDB: originalDB)
+										_ = await setValue(table: DBTable(name: tableName), key: key, objectValues: objectValues, addedDateTime: addedDateTime, updatedDateTime: updatedDateTime, deleteDateTime: deleteDateTime, sourceDB: sourceDB, originalDB: originalDB)
 									} else {
-										_ = deleteForKey(table: DBTable(name: tableName), key: key, autoDelete: false, sourceDB: sourceDB, originalDB: originalDB)
+										_ = await deleteForKey(table: DBTable(name: tableName), key: key, autoDelete: false, sourceDB: sourceDB, originalDB: originalDB)
 									}
 								}
 							}
 						} else {
-							// for table activity X, delete any entries that occured BEFORE this event
-							sqlExecute("delete from \(tableName) where key in (select key from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)')")
-							sqlExecute("delete from \(tableName)_arrayValues where key in (select key from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)')")
-							sqlExecute("delete from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)'")
-							sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(tableName)','X',NULL)")
+							await sqlExecute("delete from \(tableName) where key in (select key from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)')")
+							await sqlExecute("delete from \(tableName)_arrayValues where key in (select key from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)')")
+							await sqlExecute("delete from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)'")
+							await sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(tableName)','X',NULL)")
 						}
 					}
 
-					publisherQueue.sync {
-						for publisher in publishers {
-							publisher.updateSubject()
-						}
+					for publisher in publishers {
+						publisher.updateSubject()
 					}
 
 					return (true, sourceDB, lastSequence)
@@ -1217,70 +799,62 @@ public final class AgileDB {
 
 	// MARK: - Misc
 	/**
-	 Check for the existance of a given table
-	 - parameter table: The table to check the existence of
+	 Check for the existance of a given table.
+	 - parameter table: The table to check.
 
-	 - returns: the existence of a specified table
+	 - returns: Bool the existence of a specified table
 	 */
-	public func hasTable(_ table: DBTable) -> Bool {
-		let openResults = openDB()
-		if case .success(_) = openResults {
+	public func hasTable(_ table: DBTable) async -> Bool {
+		let openResults = await openDB()
+		if case .success = openResults {
 			return tables.hasTable(table)
 		}
-
 		return false
 	}
 
-
 	/**
-	The instanceKey for this database instance. Each AgileDB database is created with a unique instanceKey. Is nil when database could not be opened.
+	The instanceKey for this database instance. Nil when database has not been opened.
 	*/
 	public var instanceKey: String? {
-		let openResults = openDB()
-		if case .success(_) = openResults {
-			return dbInstanceKey
-		}
-
-		return nil
+		dbCore.isOpen ? dbInstanceKey : nil
 	}
 
 	/**
 	Replace single quotes with two single quotes for use in SQL commands.
-
-	- returns: An escaped string.
 	*/
-	public func esc(_ source: String) -> String {
+	public nonisolated func esc(_ source: String) -> String {
 		return source.replacingOccurrences(of: "'", with: "''")
 	}
 
 	/**
 	String value for a given date.
-
-	- parameter date: Date to get string value of
-
-	- returns: String Date presented as a string
 	*/
-	public class func stringValueForDate(_ date: Date) -> String {
+	public static func stringValueForDate(_ date: Date) -> String {
 		return AgileDB.dateFormatter.string(from: date)
 	}
 
 	/**
-	Date value for given string
-
-	- parameter stringValue: String representation of date given in ISO format "yyyy-MM-dd'T'HH:mm:ss'.'SSSZZZZZ"
-
-	- returns: NSDate? Date value. Is nil if the string could not be converted to date.
+	Date value for given string.
 	*/
-	public class func dateValueForString(_ stringValue: String) -> Date? {
+	public static func dateValueForString(_ stringValue: String) -> Date? {
 		return AgileDB.dateFormatter.date(from: stringValue)
 	}
 
 	// MARK: - Internal Initialization Methods
-	private func openDB() -> BoolResults {
+	private func openDB() async -> BoolResults {
 		if dbCore.isOpen {
 			return BoolResults.success(true)
 		}
 
+		return await openDB_async()
+	}
+
+	/// Synchronous open check — only checks isOpen, does not open. Used by callback methods.
+	private func openDB_sync() -> BoolResults {
+		dbCore.isOpen ? .success(true) : .failure(.cannotOpenFile)
+	}
+
+	private func openDB_async() async -> BoolResults {
 		let filePath: String
 
 		if let _dbFileLocation = self.dbFileLocation {
@@ -1292,35 +866,22 @@ public final class AgileDB {
 
 		dbFilePath = filePath
 
-		var fileExists = false
-
-		var openResults: BoolResults = .success(true)
-		var previouslyOpened = false
-
-		dbQueue.sync { [weak self]() -> Void in
-			guard let self = self else { return }
-
-			self.dbCore.openDBFile(filePath, autoCloseTimeout: self.autoCloseTimeout) { (results, alreadyOpen, alreadyExists) -> Void in
-				openResults = results
-				previouslyOpened = alreadyOpen
-				fileExists = alreadyExists
-
-				self.lock.signal()
+		let (openResults, previouslyOpened, fileExists): (BoolResults, Bool, Bool) = await withCheckedContinuation { continuation in
+			dbCore.openDBFile(filePath, autoCloseTimeout: self.autoCloseTimeout) { results, alreadyOpen, alreadyExists in
+				continuation.resume(returning: (results, alreadyOpen, alreadyExists))
 			}
-			self.lock.wait()
 		}
 
-		if case .success(_) = openResults, !previouslyOpened {
-			// if this fails, then the DB file has issues and should not be used
-			if !sqlExecute("ANALYZE") {
+		if case .success = openResults, !previouslyOpened {
+			if !(await sqlExecute("ANALYZE")) {
 				return BoolResults.failure(.damagedFile)
 			}
 
 			if !fileExists {
-				makeDB()
+				await makeDB()
 			}
 
-			checkSchema()
+			await checkSchema()
 			autoDeleteTimer.resume()
 		}
 
@@ -1334,15 +895,15 @@ public final class AgileDB {
 		return dbFilePath
 	}
 
-	private func makeDB() {
-		sqlExecute("create table __settings(key text, value text)")
-		sqlExecute("insert into __settings(key,value) values('schema',1)")
-		sqlExecute("create table __tableArrayColumns(tableName text, arrayColumns text)")
+	private func makeDB() async {
+		await sqlExecute("create table __settings(key text, value text)")
+		await sqlExecute("insert into __settings(key,value) values('schema',1)")
+		await sqlExecute("create table __tableArrayColumns(tableName text, arrayColumns text)")
 	}
 
-	private func checkSchema() {
+	private func checkSchema() async {
 		tables.dropAllTables()
-		let tableList = sqlSelect("SELECT name FROM sqlite_master WHERE type = 'table'")
+		let tableList = await sqlRows("SELECT name FROM sqlite_master WHERE type = 'table'")
 		if let tableList = tableList {
 			for tableRow in tableList {
 				let table = tableRow.values[0] as! String
@@ -1358,31 +919,29 @@ public final class AgileDB {
 
 		if syncingEnabled {
 			unsyncedTables = [DBTable]()
-			let unsyncedTables = sqlSelect("select tableName from __unsyncedTables")
-			if let unsyncedTables = unsyncedTables {
-				self.unsyncedTables = unsyncedTables.map({ $0.values[0] as! DBTable })
+			let unsyncedTableResults = await sqlRows("select tableName from __unsyncedTables")
+			if let unsyncedTableResults = unsyncedTableResults {
+				self.unsyncedTables = unsyncedTableResults.map({ $0.values[0] as! DBTable })
 			}
 		}
 
-		if let keyResults = sqlSelect("select value from __settings where key = 'dbInstanceKey'") {
+		if let keyResults = await sqlRows("select value from __settings where key = 'dbInstanceKey'") {
 			if keyResults.isEmpty {
 				dbInstanceKey = UUID().uuidString
 				let parts = dbInstanceKey.components(separatedBy: "-")
 				dbInstanceKey = parts[parts.count - 1]
-				sqlExecute("insert into __settings(key,value) values('dbInstanceKey','\(dbInstanceKey)')")
+				await sqlExecute("insert into __settings(key,value) values('dbInstanceKey','\(dbInstanceKey)')")
 			} else {
 				dbInstanceKey = keyResults[0].values[0] as! String
 			}
 		}
 
-		if let schemaResults = sqlSelect("select value from __settings where key = 'schema'") {
+		if let schemaResults = await sqlRows("select value from __settings where key = 'schema'") {
 			var schemaVersion = Int((schemaResults[0].values[0] as! String))!
 			if schemaVersion == 1 {
-				sqlExecute("update __settings set value = 2 where key = 'schema'")
+				await sqlExecute("update __settings set value = 2 where key = 'schema'")
 				schemaVersion = 2
 			}
-
-			// use this space to update the schema value in __settings and to update any other tables that need updating with the new schema
 		}
 	}
 }
@@ -1390,34 +949,32 @@ public final class AgileDB {
 // MARK: - Internal Publisher Updates
 extension AgileDB {
 	func removePublisher(_ publisher: UpdatablePublisher) {
-		publisherQueue.sync {
-			publishers = publishers.filter({ $0.id != publisher.id })
+		publishers = publishers.filter({ $0.id != publisher.id })
+	}
+
+	func removePublisherWithID(_ id: UUID) {
+		publishers = publishers.filter({ $0.id != id })
+	}
+
+	private func updatePublisherResults(for key: String, in table: DBTable) async {
+		for publisher in await publishersContaining(key: key, in: table) {
+			publisher.updateSubject()
 		}
 	}
 
-	fileprivate func updatePublisherResults(for key: String, in table: DBTable) {
-		publisherQueue.async {
-			for publisher in self.publishersContaining(key: key, in: table) {
-				publisher.updateSubject()
-			}
+	private func clearPublisherResults(in table: DBTable) {
+		for publisher in publishers {
+			publisher.clearResults(in: table)
 		}
 	}
 
-	fileprivate func clearPublisherResults(in table: DBTable) {
-		publisherQueue.sync {
-			for publisher in publishers {
-				publisher.clearResults(in: table)
-			}
-		}
-	}
-
-	fileprivate func publishersContaining(key: String, in table: DBTable) -> [UpdatablePublisher] {
+	private func publishersContaining(key: String, in table: DBTable) async -> [UpdatablePublisher] {
 		var matchingPublishers = [UpdatablePublisher]()
 
 		for publisher in publishers where publisher.table == table {
-			guard let sql = keysInTableSQL(table: table, sortOrder: nil, conditions: publisher.conditions, validateObjecs: publisher.validateObjects, testKey: key) else { continue }
+			guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: publisher.conditions, validateObjecs: publisher.validateObjects, testKey: key) else { continue }
 
-			guard let results = sqlSelect(sql) else { continue }
+			guard let results = await sqlRows(sql) else { continue }
 
 			let keys = results.map({ $0.values[0] as! String })
 			if keys.count > 0 {
@@ -1431,9 +988,9 @@ extension AgileDB {
 
 // MARK: - Internal data handling methods
 extension AgileDB {
-	fileprivate func keysInTableSQL(table: DBTable, sortOrder: String?, conditions: [DBCondition]?, validateObjecs: Bool, testKey: String? = nil) -> String? {
+	func keysInTableSQL(table: DBTable, sortOrder: String?, conditions: [DBCondition]?, validateObjecs: Bool, testKey: String? = nil) async -> String? {
 		var arrayColumns = [String]()
-		if let results = sqlSelect("select arrayColumns from __tableArrayColumns where tableName = '\(table)'") {
+		if let results = await sqlRows("select arrayColumns from __tableArrayColumns where tableName = '\(table)'") {
 			if results.isNotEmpty {
 				arrayColumns = (results[0].values[0] as! String).split { $0 == "," }.map { String($0) }
 			}
@@ -1441,12 +998,11 @@ extension AgileDB {
 			return nil
 		}
 
-		let tableColumns = columnsInTable(table).map({ $0.name }) + ["key"]
+		let tableColumns = (await columnsInTable(table)).map({ $0.name }) + ["key"]
 		var selectClause = "select distinct a.key from \(table) a"
 
 		var whereClause = ""
 
-		// if we have the include operator on an array object, do a left outer join
 		if var conditionSet = conditions {
 			if validateObjecs {
 				let invalidSets = conditionSet.filter({ !tableColumns.contains($0.objectKey) }).compactMap({ $0.set })
@@ -1586,17 +1142,16 @@ extension AgileDB {
 		return whereClause
 	}
 
-	private func setValue(table: DBTable, key: String, objectValues: [String: AnyObject], addedDateTime: String, updatedDateTime: String, deleteDateTime: String, sourceDB: String, originalDB: String) -> Bool {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
+	private func setValue(table: DBTable, key: String, objectValues: [String: AnyObject], addedDateTime: String, updatedDateTime: String, deleteDateTime: String, sourceDB: String, originalDB: String) async -> Bool {
+		let openResults = await openDB()
+		if case .failure = openResults {
 			return false
 		}
 
-		if !createTable(table) {
+		if !(await createTable(table)) {
 			return false
 		}
 
-		// look for any array objects
 		var arrayKeys = [String]()
 		var arrayKeyTypes = [String]()
 		var arrayTypes = [ValueType]()
@@ -1617,17 +1172,14 @@ extension AgileDB {
 		var sql = "select key from \(esc(table.name)) where key = '\(esc(key))'"
 
 		var tableHasKey = false
-		guard let results = sqlSelect(sql) else { return false }
+		guard let results = await sqlRows(sql) else { return false }
 
 		if results.isEmpty {
-			// key doesn't exist, insert values
 			sql = "insert into \(table) (key,addedDateTime,updatedDateTime,autoDeleteDateTime,hasArrayValues"
 			var placeHolders = "'\(key)','\(addedDateTime)','\(updatedDateTime)',\(deleteDateTime),'\(joinedArrayKeys)'"
 
 			for (objectKey, objectValue) in objectValues {
-				if objectKey == "key" {
-					continue
-				}
+				if objectKey == "key" { continue }
 
 				let valueType = SQLiteCore.typeOfValue(objectValue)
 				if [.int, .double, .text, .bool].contains(valueType) {
@@ -1641,18 +1193,15 @@ extension AgileDB {
 			tableHasKey = true
 			sql = "update \(table) set updatedDateTime='\(updatedDateTime)',autoDeleteDateTime=\(deleteDateTime),hasArrayValues='\(joinedArrayKeys)'"
 			for (objectKey, objectValue) in objectValues {
-				if objectKey == "key" {
-					continue
-				}
+				if objectKey == "key" { continue }
 
 				let valueType = SQLiteCore.typeOfValue(objectValue)
 				if [.int, .double, .text, .bool].contains(valueType) {
 					sql += ",\(objectKey)=?"
 				}
 			}
-			// set unused columns to NULL
 			let objectKeys = objectValues.keys
-			let columns = columnsInTable(table)
+			let columns = await columnsInTable(table)
 			for column in columns {
 				let filteredKeys = objectKeys.filter({ $0 == column.name })
 				if filteredKeys.isEmpty {
@@ -1662,18 +1211,15 @@ extension AgileDB {
 			sql += " where key = '\(key)'"
 		}
 
-		if !setTableValues(objectValues: objectValues, sql: sql) {
-			// adjust table columns
-			validateTableColumns(table: table, objectValues: objectValues as [String: AnyObject])
-			// try again
-			if !setTableValues(objectValues: objectValues, sql: sql) {
+		if !(await setTableValues(objectValues: objectValues, sql: sql)) {
+			await validateTableColumns(table: table, objectValues: objectValues as [String: AnyObject])
+			if !(await setTableValues(objectValues: objectValues, sql: sql)) {
 				return false
 			}
 		}
 
-		// process any array values
 		for index in 0 ..< arrayKeys.count {
-			if !setArrayValues(table: table, arrayValues: arrayValues[index] as! [AnyObject], valueType: arrayTypes[index], key: key, objectKey: arrayKeys[index]) {
+			if !(await setArrayValues(table: table, arrayValues: arrayValues[index] as! [AnyObject], valueType: arrayTypes[index], key: key, objectKey: arrayKeys[index])) {
 				return false
 			}
 		}
@@ -1682,13 +1228,12 @@ extension AgileDB {
 			let now = AgileDB.stringValueForDate(Date())
 			sql = "insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(table)','U','\(esc(key))')"
 
-			// TODO: Rework this so if the synclog stuff fails we do a rollback and return false
-			if sqlExecute(sql) {
-				let lastID = self.lastInsertID()
+			if await sqlExecute(sql) {
+				let lastID = await lastInsertID()
 
 				if tableHasKey {
 					sql = "delete from __synclog where tableName = '\(table)' and key = '\(self.esc(key))' and rowid < \(lastID)"
-					self.sqlExecute(sql)
+					await sqlExecute(sql)
 				}
 			}
 		}
@@ -1696,117 +1241,109 @@ extension AgileDB {
 		return true
 	}
 
-	private func setTableValues(objectValues: [String: AnyObject], sql: String) -> Bool {
-		var successful = false
-
-		dbQueue.sync { [weak self]() -> Void in
-			guard let self = self else { return }
-
-			self.dbCore.setTableValues(objectValues: objectValues, sql: sql, completion: { (success) -> Void in
-				successful = success
-				self.lock.signal()
-			})
-			self.lock.wait()
+	private func setTableValues(objectValues: [String: AnyObject], sql: String) async -> Bool {
+		await withCheckedContinuation { continuation in
+			dbCore.setTableValues(objectValues: objectValues, sql: sql) { success in
+				continuation.resume(returning: success)
+			}
 		}
-
-		return successful
 	}
 
-	private func setArrayValues(table: DBTable, arrayValues: [AnyObject], valueType: ValueType, key: String, objectKey: String) -> Bool {
-		var successful = sqlExecute("delete from \(table)_arrayValues where key='\(key)' and objectKey='\(objectKey)'")
-		if !successful {
-			return false
-		}
+	private func setArrayValues(table: DBTable, arrayValues: [AnyObject], valueType: ValueType, key: String, objectKey: String) async -> Bool {
+		var successful = await sqlExecute("delete from \(table)_arrayValues where key='\(key)' and objectKey='\(objectKey)'")
+		if !successful { return false }
 
 		for value in arrayValues {
 			switch valueType {
 			case .textArray:
-				successful = sqlExecute("insert into \(table)_arrayValues(key,objectKey,stringValue) values('\(key)','\(objectKey)','\(esc(value as! String))')")
+				successful = await sqlExecute("insert into \(table)_arrayValues(key,objectKey,stringValue) values('\(key)','\(objectKey)','\(esc(value as! String))')")
 			case .intArray:
-				successful = sqlExecute("insert into \(table)_arrayValues(key,objectKey,intValue) values('\(key)','\(objectKey)',\(value as! Int))")
+				successful = await sqlExecute("insert into \(table)_arrayValues(key,objectKey,intValue) values('\(key)','\(objectKey)',\(value as! Int))")
 			case .doubleArray:
-				successful = sqlExecute("insert into \(table)_arrayValues(key,objectKey,doubleValue) values('\(key)','\(objectKey)',\(value as! Double))")
+				successful = await sqlExecute("insert into \(table)_arrayValues(key,objectKey,doubleValue) values('\(key)','\(objectKey)',\(value as! Double))")
 			default:
 				successful = true
 			}
 
-			if !successful {
-				return false
-			}
+			if !successful { return false }
 		}
 
 		return true
 	}
 
-	private func deleteForKey(table: DBTable, key: String, autoDelete: Bool, sourceDB: String, originalDB: String) -> Bool {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return false
-		}
+	private func deleteForKey(table: DBTable, key: String, autoDelete: Bool, sourceDB: String, originalDB: String) async -> Bool {
+		let openResults = await openDB()
+		if case .failure = openResults { return false }
 
-		if !tables.hasTable(table) {
-			return false
-		}
+		if !tables.hasTable(table) { return false }
 
-		if !sqlExecute("delete from \(table) where key = '\(esc(key))'") || !sqlExecute("delete from \(table)_arrayValues where key = '\(esc(key))'") {
-			return false
-		}
+		let del1 = await sqlExecute("delete from \(table) where key = '\(esc(key))'")
+		let del2 = await sqlExecute("delete from \(table)_arrayValues where key = '\(esc(key))'")
+		if !del1 || !del2 { return false }
 
 		let now = AgileDB.stringValueForDate(Date())
 		if syncingEnabled && unsyncedTables.doesNotContain(table) {
 			var sql = ""
-			// auto-deleted entries will be automatically removed from any other databases too. Don't need to log this deletion.
 			if !autoDelete {
 				sql = "insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(table)','D','\(esc(key))')"
-				_ = sqlExecute(sql)
+				_ = await sqlExecute(sql)
 
-				let lastID = lastInsertID()
+				let lastID = await lastInsertID()
 				sql = "delete from __synclog where tableName = '\(table)' and key = '\(esc(key))' and rowid < \(lastID)"
-				_ = sqlExecute(sql)
+				_ = await sqlExecute(sql)
 			} else {
 				sql = "delete from __synclog where tableName = '\(table)' and key = '\(esc(key))'"
-				_ = sqlExecute(sql)
+				_ = await sqlExecute(sql)
 			}
 		}
 
 		return true
 	}
 
-	private func autoDelete() {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return
-		}
+	private func autoDelete() async {
+		let openResults = await openDB()
+		if case .failure = openResults { return }
 
 		let now = AgileDB.stringValueForDate(Date())
 		let dbTables = tables.allTables()
 		for table in dbTables {
 			if !AgileDB.reservedTable(table.name) {
 				let sql = "select key from \(table) where autoDeleteDateTime < '\(now)'"
-				if let results = sqlSelect(sql) {
+				if let results = await sqlRows(sql) {
 					for row in results {
 						let key = row.values[0] as! String
-						_ = deleteForKey(table: table, key: key, autoDelete: true, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
+						_ = await deleteForKey(table: table, key: key, autoDelete: true, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
 					}
 				}
 			}
 		}
 	}
 
-	private func dictValueFromTable(_ table: DBTable, for key: String, includeDates: Bool) -> [String: AnyObject]? {
+	private func dictValueFromTable(_ table: DBTable, for key: String, includeDates: Bool) async -> [String: AnyObject]? {
 		assert(key != "", "key value must be provided")
-		let openResults = openDB()
-		if case .failure(_) = openResults, !tables.hasTable(table) {
-			return nil
+		let openResults = await openDB()
+		if case .failure = openResults { return nil }
+		if !tables.hasTable(table) { return nil }
+
+		var columns = await columnsInTable(table)
+		if includeDates {
+			columns.append(TableColumn(name: "autoDeleteDateTime", type: .text))
+			columns.append(TableColumn(name: "addedDateTime", type: .text))
+			columns.append(TableColumn(name: "updatedDateTime", type: .text))
 		}
 
-		let (sql, columns) = dictValueForKeySQL(table: table, key: key, includeDates: includeDates)
-		let results = sqlSelect(sql)
+		var sql = "select hasArrayValues"
+		for column in columns {
+			sql += ",\(column.name)"
+		}
+		sql += " from \(table) where key = '\(esc(key))'"
 
-		return dictValueResults(table: table, key: key, results: results, columns: columns)
+		let results = await sqlRows(sql)
+
+		return await dictValueResults(table: table, key: key, results: results, columns: columns)
 	}
 
-	private func dictValueResults(table: DBTable, key: String, results: [DBRow]?, columns: [TableColumn]) -> [String: AnyObject]? {
+	private func dictValueResults(table: DBTable, key: String, results: [DBRow]?, columns: [TableColumn]) async -> [String: AnyObject]? {
 		guard let results = results, results.isNotEmpty else { return nil }
 
 		var valueDict = [String: AnyObject]()
@@ -1821,12 +1358,9 @@ extension AgileDB {
 			}
 		}
 
-		// handle any arrayValues
 		let arrayObjects = (results[0].values[0] as! String).split { $0 == "," }.map { String($0) }
 		for object in arrayObjects {
-			if object == "" {
-				continue
-			}
+			if object == "" { continue }
 
 			let keyType = object.split { $0 == ":" }.map { String($0) }
 			let objectKey = keyType[0]
@@ -1838,11 +1372,11 @@ extension AgileDB {
 			var arrayQueryResults: [DBRow]?
 			switch valueType {
 			case .textArray:
-				arrayQueryResults = sqlSelect("select stringValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
+				arrayQueryResults = await sqlRows("select stringValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
 			case .intArray:
-				arrayQueryResults = sqlSelect("select intValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
+				arrayQueryResults = await sqlRows("select intValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
 			case .doubleArray:
-				arrayQueryResults = sqlSelect("select doubleValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
+				arrayQueryResults = await sqlRows("select doubleValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
 				valueDict[objectKey] = doubleArray as AnyObject
 			default:
 				break
@@ -1878,23 +1412,6 @@ extension AgileDB {
 		return valueDict
 	}
 
-	private func dictValueForKeySQL(table: DBTable, key: String, includeDates: Bool) -> (String, [TableColumn]) {
-		var columns = columnsInTable(table)
-		if includeDates {
-			columns.append(TableColumn(name: "autoDeleteDateTime", type: .text))
-			columns.append(TableColumn(name: "addedDateTime", type: .text))
-			columns.append(TableColumn(name: "updatedDateTime", type: .text))
-		}
-
-		var sql = "select hasArrayValues"
-		for column in columns {
-			sql += ",\(column.name)"
-		}
-		sql += " from \(table) where key = '\(esc(key))'"
-
-		return (sql, columns)
-	}
-
 	// MARK: - Internal Table methods
 	struct TableColumn {
 		fileprivate var name: String
@@ -1919,45 +1436,41 @@ extension AgileDB {
 			|| column == "arrayValues"
 	}
 
-	private func createTable(_ table: DBTable) -> Bool {
-		if tables.hasTable(table) {
-			return true
-		}
+	private func createTable(_ table: DBTable) async -> Bool {
+		if tables.hasTable(table) { return true }
 
-		if !sqlExecute("create table \(table) (key text PRIMARY KEY, autoDeleteDateTime text, addedDateTime text, updatedDateTime text, hasArrayValues text)") || !sqlExecute("create index idx_\(table)_autoDeleteDateTime on \(table)(autoDeleteDateTime)") {
-			return false
-		}
+		let ct1 = await sqlExecute("create table \(table) (key text PRIMARY KEY, autoDeleteDateTime text, addedDateTime text, updatedDateTime text, hasArrayValues text)")
+		let ct2 = await sqlExecute("create index idx_\(table)_autoDeleteDateTime on \(table)(autoDeleteDateTime)")
+		if !ct1 || !ct2 { return false }
 
-		if !sqlExecute("create table \(table)_arrayValues (key text, objectKey text, stringValue text, intValue int, doubleValue double)") || !sqlExecute("create index idx_\(table)_arrayValues_keys on \(table)_arrayValues(key,objectKey)") {
-			return false
-		}
+		let ct3 = await sqlExecute("create table \(table)_arrayValues (key text, objectKey text, stringValue text, intValue int, doubleValue double)")
+		let ct4 = await sqlExecute("create index idx_\(table)_arrayValues_keys on \(table)_arrayValues(key,objectKey)")
+		if !ct3 || !ct4 { return false }
 
 		tables.addTable(table)
 
 		return true
 	}
 
-	private func createIndexesForTable(_ table: DBTable) {
-		if !tables.hasTable(table) {
-			return
-		}
+	private func createIndexesForTable(_ table: DBTable) async {
+		if !tables.hasTable(table) { return }
 
-		if let indexes = indexes[table.name] {
-			for index in indexes {
+		if let tableIndexes = indexes[table.name] {
+			for index in tableIndexes {
 				var indexName = index.replacingOccurrences(of: ",", with: "_")
 				indexName = "idx_\(table)_\(indexName)"
 
 				var sql = "select * from sqlite_master where tbl_name = '\(table)' and name = '\(indexName)'"
-				if let results = sqlSelect(sql), results.isEmpty {
+				if let results = await sqlRows(sql), results.isEmpty {
 					sql = "CREATE INDEX \(indexName) on \(table)(\(index))"
-					_ = sqlExecute(sql)
+					_ = await sqlExecute(sql)
 				}
 			}
 		}
 	}
 
-	private func columnsInTable(_ table: DBTable) -> [TableColumn] {
-		guard let tableInfo = sqlSelect("pragma table_info(\(table))") else { return [] }
+	private func columnsInTable(_ table: DBTable) async -> [TableColumn] {
+		guard let tableInfo = await sqlRows("pragma table_info(\(table))") else { return [] }
 		var columns = [TableColumn]()
 		for info in tableInfo {
 			let columnName = info.values[1] as! String
@@ -1971,13 +1484,10 @@ extension AgileDB {
 		return columns
 	}
 
-	private func validateTableColumns(table: DBTable, objectValues: [String: AnyObject]) {
-		let columns = columnsInTable(table)
-		// determine missing columns and add them
+	private func validateTableColumns(table: DBTable, objectValues: [String: AnyObject]) async {
+		let columns = await columnsInTable(table)
 		for (objectKey, value) in objectValues {
-			if objectKey == "key" {
-				continue
-			}
+			if objectKey == "key" { continue }
 
 			assert(!reservedColumn(objectKey as String), "Reserved column")
 			assert((objectKey as String).range(of: "'") == nil, "Single quote not allowed in column names")
@@ -1988,180 +1498,121 @@ extension AgileDB {
 				let valueType = SQLiteCore.typeOfValue(value)
 				assert(valueType != .unknown, "column types are int, double, string, bool or arrays of int, double, or string")
 
-				if valueType == .null {
-					continue
-				}
+				if valueType == .null { continue }
 
 				if [.int, .double, .text].contains(valueType) {
 					let sql = "alter table \(table) add column \(objectKey) \(valueType.rawValue)"
-					_ = sqlExecute(sql)
+					_ = await sqlExecute(sql)
 				} else if valueType == .bool {
 					let sql = "alter table \(table) add column \(objectKey) int"
-					_ = sqlExecute(sql)
+					_ = await sqlExecute(sql)
 				} else {
-					// array type
 					let sql = "select arrayColumns from __tableArrayColumns where tableName = '\(table)'"
-					if let results = sqlSelect(sql) {
+					if let results = await sqlRows(sql) {
 						var arrayColumns = ""
 						if results.isNotEmpty {
 							arrayColumns = results[0].values[0] as! String
 							arrayColumns += ",\(objectKey)"
-							_ = sqlExecute("delete from __tableArrayColumns where tableName = '\(table)'")
+							_ = await sqlExecute("delete from __tableArrayColumns where tableName = '\(table)'")
 						} else {
 							arrayColumns = objectKey as String
 						}
-						_ = sqlExecute("insert into __tableArrayColumns(tableName,arrayColumns) values('\(table)','\(arrayColumns)')")
+						_ = await sqlExecute("insert into __tableArrayColumns(tableName,arrayColumns) values('\(table)','\(arrayColumns)')")
 					}
 				}
 			}
 		}
 
-		createIndexesForTable(table)
+		await createIndexesForTable(table)
 	}
 
 	// MARK: - SQLite execute/query
 	@discardableResult
-	private func sqlExecute(_ sql: String) -> Bool {
-		var successful = false
-
-		dbQueue.sync { [weak self]() -> Void in
-			guard let self = self else { return }
-
-			_ = self.dbCore.sqlExecute(sql, completion: { (success) in
-				successful = success
-				self.lock.signal()
-			})
-			self.lock.wait()
+	private func sqlExecute(_ sql: String) async -> Bool {
+		await withCheckedContinuation { continuation in
+			_ = dbCore.sqlExecute(sql) { success in
+				continuation.resume(returning: success)
+			}
 		}
-
-		return successful
 	}
 
-	private func lastInsertID() -> sqlite3_int64 {
-		var lastID: sqlite3_int64 = 0
-
-		dbQueue.sync(execute: { [weak self]() -> Void in
-			guard let self = self else { return }
-
-			self.dbCore.lastID({ (lastInsertionID) -> Void in
-				lastID = lastInsertionID
-				self.lock.signal()
-			})
-			self.lock.wait()
-		})
-
-		return lastID
+	private func lastInsertID() async -> sqlite3_int64 {
+		await withCheckedContinuation { continuation in
+			dbCore.lastID { id in
+				continuation.resume(returning: id)
+			}
+		}
 	}
 
-	public func sqlSelect(_ sql: String) -> [DBRow]? {
-		var results: RowResults = .success([])
-
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return nil
+	private func sqlRows(_ sql: String) async -> [DBRow]? {
+		let result: RowResults = await withCheckedContinuation { continuation in
+			_ = dbCore.sqlSelect(sql) { continuation.resume(returning: $0) }
 		}
-
-		dbQueue.sync { [weak self]() -> Void in
-			guard let self = self else { return }
-
-			_ = self.dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
-				results = rowResults
-				self.lock.signal()
-			})
-			self.lock.wait()
-		}
-
-		switch results {
-		case .success(let rows):
-			return rows
-
-		case .failure(_):
-			return nil
+		switch result {
+		case .success(let rows): return rows
+		case .failure: return nil
 		}
 	}
 
 	/**
-	 Asynchronously runs a SQL command.
+	 Asynchronously runs a SQL select command.
 
 	 - parameter sql: The `select` SQL command to run.
 
 	  - returns: [DBRow]
 	  - throws: DBError
 	  */
-
 	public func sqlSelect(_ sql: String) async throws -> [DBRow] {
-		let results = await bridgingSqlSelect(sql)
+		let openResults = await openDB()
+		if case .failure(let error) = openResults { throw error }
 
-		switch results {
-		case .success(let value):
-			return value
-		case .failure(let error):
-			throw error
+		let result: RowResults = await withCheckedContinuation { continuation in
+			_ = dbCore.sqlSelect(sql) { continuation.resume(returning: $0) }
 		}
-	}
 
-	private func bridgingSqlSelect(_ sql: String) async -> RowResults {
-		await withCheckedContinuation { continuation in
-			self.sqlSelect(sql) { results in
-				continuation.resume(returning: results)
-			}
+		switch result {
+		case .success(let rows): return rows
+		case .failure(let error): throw error
 		}
 	}
 
 	/**
-	 Runs a SQL command and returns the results.
+	 Runs a SQL select and returns results via a completion closure.
 
 	 - parameter sql: The `select` SQL command to run.
+	 - parameter queue: Optional dispatch queue for the completion closure. Default is main queue.
+	 - parameter completion: Closure receiving the result.
 
-	  - returns: Result<[DBRow], DBError>
+	  - returns: DBCommandToken that can be used to cancel the command before it executes.
 	  */
 	@discardableResult
 	public func sqlSelect(_ sql: String, queue: DispatchQueue? = nil, completion: @escaping (RowResults) -> Void) -> DBCommandToken? {
-		let openResults = openDB()
-		if case .failure(_) = openResults {
-			return nil
-		}
+		guard dbCore.isOpen else { return nil }
 
-		let blockReference: UInt = self.dbCore.sqlSelect(sql, completion: { (rowResults) -> Void in
+		let blockReference: UInt = dbCore.sqlSelect(sql, completion: { rowResults in
 			let dispatchQueue = queue ?? DispatchQueue.main
-			dispatchQueue.async {
-				let results: RowResults
-
-				switch rowResults {
-				case .success(let rows):
-					results = .success(rows)
-
-				case .failure(let error):
-					results = .failure(error)
-				}
-
-				completion(results)
-			}
+			dispatchQueue.async { completion(rowResults) }
 		})
 
 		return DBCommandToken(database: self, identifier: blockReference)
 	}
 
-	func dequeueCommand(_ commandReference: UInt) -> Bool {
-		var removed = true
-
-		dbQueue.sync { [weak self]() -> Void in
-			guard let self = self else { return }
-
-			self.dbCore.removeExecutionBlock(commandReference, completion: { (results) -> Void in
-				removed = results
-				self.lock.signal()
-			})
-			self.lock.wait()
+	/// Cancels a queued command by its block reference. `nonisolated` so `DBCommandToken.cancel()` stays synchronous.
+	nonisolated func dequeueCommand(_ commandReference: UInt) -> Bool {
+		let semaphore = DispatchSemaphore(value: 0)
+		var removed = false
+		dbCore.removeExecutionBlock(commandReference) { result in
+			removed = result
+			semaphore.signal()
 		}
-
+		semaphore.wait()
 		return removed
 	}
 }
 
 // MARK: - SQLiteCore
 private extension AgileDB {
-	final class SQLiteCore: Thread {
+	final class SQLiteCore: Thread, @unchecked Sendable {
 		var isOpen = false
 		var isDebugging = false
 
@@ -2415,13 +1866,10 @@ private extension AgileDB {
 					completion(false)
 					return
 				} else {
-					// try to bind the object properties to table fields.
 					var index: Int32 = 1
 
 					for (objectKey, objectValue) in objectValues {
-						if objectKey == "key" {
-							continue
-						}
+						if objectKey == "key" { continue }
 
 						let valueType = SQLiteCore.typeOfValue(objectValue)
 						guard [.int, .double, .text, .bool].contains(valueType) else { continue }
@@ -2654,4 +2102,3 @@ fileprivate extension Array where Element: Equatable {
 		return !contains(element)
 	}
 }
-
