@@ -39,8 +39,8 @@ struct PublisherTests {
 
 		// Verify we received the expected updates
 		#expect(receivedResults.count >= 2, "Should have received at least 2 updates")
-		#expect(receivedResults[1].count == 9, "Second update should have 9 items")
-		#expect(receivedResults[2].count == 10, "Third update should have 10 items")
+		#expect(receivedResults[0].count == 9, "First update should have 9 items")
+		#expect(receivedResults[1].count == 10, "Second update should have 10 items")
 
 		cancellable.cancel()
 
@@ -92,13 +92,14 @@ struct PublisherTests {
 
 		// Verify publisher 1 received expected updates
 		#expect(results1.count >= 3, "Publisher 1 should have received at least 3 updates")
-		#expect(results1[1].count == 5, "Publisher 1 second update should have 5 items")
-		#expect(results1[2].count == 6, "Publisher 1 third update should have 6 items")
+		#expect(results1[0].count == 5, "Publisher 1 first update should have 5 items (initial)")
+		#expect(results1[1].count == 6, "Publisher 1 second update should have 6 items (after adding K10)")
+		#expect(results1[2].count == 5, "Publisher 1 third update should have 5 items (after deleting K10)")
 
 		// Verify publisher 2 received expected updates
 		#expect(results2.count >= 2, "Publisher 2 should have received at least 2 updates")
-		#expect(results2[1].count == 4, "Publisher 2 second update should have 4 items")
-		#expect(results2[2].count == 5, "Publisher 2 third update should have 5 items")
+		#expect(results2[0].count == 4, "Publisher 2 first update should have 4 items (initial)")
+		#expect(results2[1].count == 5, "Publisher 2 second update should have 5 items (after adding K11)")
 
 		subscription1.cancel()
 		subscription2.cancel()
