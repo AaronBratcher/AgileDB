@@ -10,15 +10,24 @@ import Foundation
 
 public class DBResults<T: DBObject>: Identifiable {
 	public typealias CustomClassValue = T
-	public typealias CustomClassIndex = Array<CustomClassValue>.Index
+	public typealias CustomClassIndex = Array<String>.Index
 
 	public let id = UUID()
-	private let keys: [String]
+	public let keys: [String]
 	private let db: AgileDB
+
+	public var count: Int { keys.count }
+	public var isEmpty: Bool { keys.isEmpty }
 
 	public init(db: AgileDB = AgileDB.shared, keys: [String] = []) {
 		self.db = db
 		self.keys = keys
+	}
+
+	/// Asynchronously loads the object at the given index.
+	public func object(at index: CustomClassIndex) async -> T? {
+		guard index >= 0 && index < keys.count else { return nil }
+		return await T(db: db, key: keys[index])
 	}
 }
 
@@ -26,13 +35,8 @@ extension DBResults: RandomAccessCollection {
 	public var startIndex: CustomClassIndex { return keys.startIndex }
 	public var endIndex: CustomClassIndex { return keys.endIndex }
 
+	/// Returns nil — use `object(at:) async` to load objects asynchronously.
 	public subscript(index: CustomClassIndex) -> CustomClassValue? {
-		get {
-			if index >= 0 && index < keys.count {
-				return T(db: db, key: keys[index])
-			} else {
-				return nil
-			}
-		}
+		return nil
 	}
 }

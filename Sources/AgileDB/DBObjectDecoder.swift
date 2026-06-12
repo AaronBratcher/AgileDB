@@ -18,20 +18,43 @@ extension Array: DBObjectArrayMarker where Element: DBObject {
 	}
 }
 
+/**
+Shared, mutable state used while decoding a DBObject graph.
+
+Because `Decodable.init(from:)` is synchronous but loading nested DBObjects from the
+actor requires `await`, nested object dictionaries are pre-loaded asynchronously and
+stored in `cache`. When a needed nested object is not yet cached, the decoder records
+the request in `misses` and aborts with `NeedsNestedLoad`; the async driver then loads
+the missing dictionaries and retries the decode.
+*/
+final class DBObjectDecoderState {
+	var cache: [String: [String: AnyObject]] = [:]
+	var misses: [(table: DBTable, key: String)] = []
+
+	static func cacheKey(table: DBTable, key: String) -> String {
+		return "\(table.name)::\(key)"
+	}
+}
+
+/// Thrown during decoding when a nested DBObject's data has not yet been loaded.
+struct NeedsNestedLoad: Error {}
+
 class DBObjectDecoder: Decoder {
 	var codingPath: [CodingKey] = []
 	var userInfo: [CodingUserInfoKey: Any] = [:]
 
 	let dict: [String: AnyObject]
 	let db: AgileDB
+	let state: DBObjectDecoderState
 
-	init(_ dict: [String: AnyObject], db: AgileDB) {
+	init(_ dict: [String: AnyObject], db: AgileDB, state: DBObjectDecoderState = DBObjectDecoderState()) {
 		self.dict = dict
 		self.db = db
+		self.state = state
 	}
 
 	func container<Key>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> where Key: CodingKey {
-		return KeyedDecodingContainer(DictKeyedContainer<Key>(dict: dict, db: db))
+		return KeyedDecodingContainer(DictKeyedContainer<Key>(dict: dict, db: db, state: state))
 	}
 
 	func unkeyedContainer() throws -> UnkeyedDecodingContainer {
@@ -74,10 +97,12 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 
 	private let dict: [String: AnyObject]
 	private let db: AgileDB
+	private let state: DBObjectDecoderState
 
-	init(dict: [String: AnyObject], db: AgileDB) {
+	init(dict: [String: AnyObject], db: AgileDB, state: DBObjectDecoderState) {
 		self.dict = dict
 		self.db = db
+		self.state = state
 	}
 
 	func contains(_ key: K) -> Bool {
@@ -93,30 +118,51 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	}
 
 	func decodeObject(_ type: DBObject.Type, forKey key: K) throws -> DBObject {
-		guard let value = dict[key.stringValue] as? String else {
+		guard let storedKey = dict[key.stringValue] as? String else {
 			throw DictDecoderError.missingValueForKey(key.stringValue)
 		}
 
-		guard let dbObject = type.init(db: db, key: value) else {
-			throw DictDecoderError.invalidNestedObject(key.stringValue, value)
+		guard let nestedDict = state.cache[DBObjectDecoderState.cacheKey(table: type.table, key: storedKey)] else {
+			// Data not loaded yet — record the need and abort so the async driver can load it.
+			state.misses.append((type.table, storedKey))
+			throw NeedsNestedLoad()
 		}
 
-		return dbObject
+		return try decodeNested(type, dict: nestedDict, key: storedKey)
 	}
 
 	func decodeObjectArray(_ type: DBObjectArrayMarker.Type, forKey key: K) throws -> [DBObject] {
-		guard let values = dict[key.stringValue] as? [String] else {
+		guard let storedKeys = dict[key.stringValue] as? [String] else {
 			throw DictDecoderError.missingValueForKey(key.stringValue)
 		}
 
-		var objectValues: [DBObject] = []
-		for value in values {
-			if let dbObject = type.elementType.init(db: db, key: value) {
-				objectValues.append(dbObject)
-			}
+		let elementType = type.elementType
+
+		// Record every element that hasn't been loaded yet before aborting, so a single
+		// retry can load the whole array rather than one element at a time.
+		var needsLoad = false
+		for storedKey in storedKeys where state.cache[DBObjectDecoderState.cacheKey(table: elementType.table, key: storedKey)] == nil {
+			state.misses.append((elementType.table, storedKey))
+			needsLoad = true
+		}
+		if needsLoad {
+			throw NeedsNestedLoad()
 		}
 
-		return objectValues
+		var objects: [DBObject] = []
+		for storedKey in storedKeys {
+			let nestedDict = state.cache[DBObjectDecoderState.cacheKey(table: elementType.table, key: storedKey)]!
+			objects.append(try decodeNested(elementType, dict: nestedDict, key: storedKey))
+		}
+
+		return objects
+	}
+
+	private func decodeNested(_ type: DBObject.Type, dict: [String: AnyObject], key: String) throws -> DBObject {
+		var nestedDict = dict
+		nestedDict["key"] = key as AnyObject
+		let nestedDecoder = DBObjectDecoder(nestedDict, db: db, state: state)
+		return try type.init(from: nestedDecoder)
 	}
 
 	func decode(_ type: Bool.Type, forKey key: K) throws -> Bool {

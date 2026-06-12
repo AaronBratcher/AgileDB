@@ -17,7 +17,7 @@ public typealias DictResults = Result<[String: AnyObject], DBError>
 /**
 DBTable is used to identify the table data is stored in
 */
-public struct DBTable: Equatable {
+public struct DBTable: Equatable, Sendable {
 	let name: String
 
 	public init(name: String) {
@@ -43,7 +43,7 @@ extension DBTable: CustomStringConvertible {
 DBCommandToken is returned by asynchronous methods. Call the token's cancel method to cancel the command before it executes.
 */
 public struct DBCommandToken {
-	private weak var database: AgileDB?
+	private let database: AgileDB
 	private let identifier: UInt
 
 	init(database: AgileDB, identifier: UInt) {
@@ -52,13 +52,13 @@ public struct DBCommandToken {
 	}
 
 	/**
-    Cancel the asynchronous command before it executes
+    Cancel the asynchronous command before it executes.
 
     - returns: Bool Returns if the cancel was successful.
     */
 	@discardableResult
 	public func cancel() -> Bool {
-		guard let database = database else { return false }
+		// dequeueCommand is nonisolated so this stays synchronous
 		return database.dequeueCommand(identifier)
 	}
 }
@@ -74,7 +74,7 @@ public enum DBConditionOperator: String {
 	case inList = "()"
 }
 
-public struct DBCondition {
+public struct DBCondition: @unchecked Sendable {
 	public var set = 0
 	public var objectKey = ""
 	public var conditionOperator = DBConditionOperator.equal
@@ -88,11 +88,11 @@ public struct DBCondition {
 	}
 }
 
-public struct DBRow {
+public struct DBRow: @unchecked Sendable {
 	public var values = [AnyObject?]()
 }
 
-public enum DBError: Error {
+public enum DBError: Error, Equatable {
 	case cannotWriteToFile
 	case diskError
 	case damagedFile

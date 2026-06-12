@@ -7,78 +7,74 @@
 //
 
 import Foundation
-import XCTest
+import Testing
 @testable import AgileDB
 
-func dbForTestClass(className: String) -> AgileDB {
-	let pathURL = URL(fileURLWithPath: pathForDB(className: className))
+func dbForTesting(isDebugging: Bool = false) -> AgileDB {
+	let pathURL = URL(fileURLWithPath: pathForDB)
 	print(pathURL)
-	let db = AgileDB(fileLocation: pathURL)
+	let db = AgileDB(fileLocation: pathURL, isDebugging: isDebugging)
 
 	return db
 }
 
-func pathForDB(className: String) -> String {
+var pathForDB: String {
+	let fileName = UUID().uuidString
 	let searchPaths = NSSearchPathForDirectoriesInDomains(.downloadsDirectory, .userDomainMask, true)
 	let documentFolderPath = searchPaths[0]
-	let dbFilePath = documentFolderPath + "/\(className).db"
+	let dbFilePath = documentFolderPath + "/\(fileName).db"
 	return dbFilePath
 }
 
-func removeDB(for className: String) {
-	let path = pathForDB(className: className)
-	let fileExists = FileManager.default.fileExists(atPath: path)
+func removeDB(_ db: AgileDB) async {
+	guard let path = await db.fileLocation else { return }
+
+	let fileExists = FileManager.default.fileExists(atPath: path.path)
 	if fileExists {
-		try? FileManager.default.removeItem(atPath: path)
+		try? FileManager.default.removeItem(atPath: path.path)
 	}
 }
 
-class SyncTests: XCTestCase {
-	lazy var db: AgileDB = {
-		return dbForTestClass(className: String(describing: type(of: self)))
-	}()
-
-	override func setUpWithError() throws {
-		super.setUp()
-		db.dropAllTables()
+@Suite("Sync Tests")
+struct SyncTests {
+	@Test("Enable syncing")
+	func testEnableSyncing() async throws {
+		let db = dbForTesting()
+		#expect(await db.enableSyncing(), "Could not enable syncing")
+		await removeDB(db)
 	}
 
-	override func tearDownWithError() throws {
-		// Put teardown code here. This method is called after the invocation of each test method in the class.
-		super.tearDown()
-		db.close()
-		removeDB(for: String(describing: type(of: self)))
+	@Test("Disable syncing")
+	func testDisableSyncing() async throws {
+		let db = dbForTesting()
+		guard await db.enableSyncing() else { return }
+		#expect(await db.disableSyncing(), "Could not disable syncing")
+		await removeDB(db)
 	}
 
-	func testEnableSyncing() {
-		XCTAssert(db.enableSyncing(), "Could not enable syncing")
-	}
+	@Test("Create sync file")
+	func testCreateSyncFile() async throws {
+		let db = dbForTesting()
 
-	func testDisableSyncing() {
-		if !db.enableSyncing() { return }
-		XCTAssert(db.disableSyncing(), "Could not disable syncing")
-	}
+		_ = await db.disableSyncing()
+		await db.dropAllTables()
+		_ = await db.enableSyncing()
 
-	func testCreateSyncFile() {
-		_ = db.disableSyncing()
-		db.dropAllTables()
-		_ = db.enableSyncing()
+		await db.setValueInTable(DBTable(name: "table8"), for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil)
+		await db.deleteFromTable(DBTable(name: "table8"), for: "testKey1")
 
-		db.setValueInTable(DBTable(name: "table8"), for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil)
-		db.deleteFromTable(DBTable(name: "table8"), for: "testKey1")
+		await db.setValueInTable(DBTable(name: "table9"), for: "testKey2", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
 
-		db.setValueInTable(DBTable(name: "table9"), for: "testKey2", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table9"), for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\"}", autoDeleteAfter: nil)
 
-		db.setValueInTable(DBTable(name: "table9"), for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table10"), for: "testKey3", to: "{\"numValue\":3,\"account\":\"TEST2\",\"dateValue\":\"2014-10-19T18:23:42.434-05:00\",\"arrayValue\":[11,12,13,14,15]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table10"), for: "testKey3", to: "{\"numValue\":3,\"dateValue\":\"2014-10-19T18:23:42.434-05:00\",\"arrayValue\":[11,12]}", autoDeleteAfter: nil)
 
-		db.setValueInTable(DBTable(name: "table10"), for: "testKey3", to: "{\"numValue\":3,\"account\":\"TEST2\",\"dateValue\":\"2014-10-19T18:23:42.434-05:00\",\"arrayValue\":[11,12,13,14,15]}", autoDeleteAfter: nil)
-		db.setValueInTable(DBTable(name: "table10"), for: "testKey3", to: "{\"numValue\":3,\"dateValue\":\"2014-10-19T18:23:42.434-05:00\",\"arrayValue\":[11,12]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table11"), for: "testKey4", to: "{\"numValue\":4,\"account\":\"TEST3\",\"dateValue\":\"2014-11-19T18:23:42.434-05:00\",\"arrayValue\":[16,17,18,19,20]}", autoDeleteAfter: nil)
+		await db.deleteFromTable(DBTable(name: "table11"), for: "testKey4")
 
-		db.setValueInTable(DBTable(name: "table11"), for: "testKey4", to: "{\"numValue\":4,\"account\":\"TEST3\",\"dateValue\":\"2014-11-19T18:23:42.434-05:00\",\"arrayValue\":[16,17,18,19,20]}", autoDeleteAfter: nil)
-		db.deleteFromTable(DBTable(name: "table11"), for: "testKey4")
-
-		db.setValueInTable(DBTable(name: "table12"), for: "testKey5", to: "{\"numValue\":5,\"account\":\"ACCT3\",\"dateValue\":\"2014-12-19T18:23:42.434-05:00\",\"arrayValue\":[21,22,23,24,25]}", autoDeleteAfter: nil)
-		db.dropTable("table9")
+		await db.setValueInTable(DBTable(name: "table12"), for: "testKey5", to: "{\"numValue\":5,\"account\":\"ACCT3\",\"dateValue\":\"2014-12-19T18:23:42.434-05:00\",\"arrayValue\":[21,22,23,24,25]}", autoDeleteAfter: nil)
+		await db.dropTable("table9")
 
 		let searchPaths = NSSearchPathForDirectoriesInDomains(.downloadsDirectory, .userDomainMask, true)
 		let documentFolderPath = searchPaths[0]
@@ -86,10 +82,10 @@ class SyncTests: XCTestCase {
 		print(logFilePath)
 		let fileURL = URL(fileURLWithPath: logFilePath)
 
-		let (complete, lastSequence) = db.createSyncFileAtURL(fileURL, lastSequence: 0, targetDBInstanceKey: "TEST-DB-INSTANCE")
+		let (complete, lastSequence) = await db.createSyncFileAtURL(fileURL, lastSequence: 0, targetDBInstanceKey: "TEST-DB-INSTANCE")
 
-		XCTAssert(complete, "sync file not completed")
-		XCTAssert(lastSequence == 10, "lastSequence is incorrect")
+		#expect(complete, "sync file not completed")
+		#expect(lastSequence == 10, "lastSequence is incorrect")
 
 		// read in file and make sure it is valid JSON
 		if let fileHandle = FileHandle(forReadingAtPath: logFilePath) {
@@ -97,99 +93,97 @@ class SyncTests: XCTestCase {
 			if let _ = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject] {
 				// conversion successful
 			} else {
-				XCTAssert(false, "invalid sync file format")
+				Issue.record("invalid sync file format")
 			}
 		} else {
-			XCTAssert(false, "cannot open file")
+			Issue.record("cannot open file")
 		}
+
+		await removeDB(db)
 	}
 
-	func testProcessSyncFile() {
-		if !db.disableSyncing() {
-			XCTFail()
-		}
+	@Test("Process sync file")
+	func testProcessSyncFile() async throws {
+		let db = dbForTesting()
 
-		if !db.dropAllTables() {
-			XCTFail()
-		}
-
-		if !db.enableSyncing() {
-			XCTFail()
-		}
+		#expect(await db.disableSyncing())
+		#expect(await db.dropAllTables())
+		#expect(await db.enableSyncing())
 
 		let table11: DBTable = "table11"
-		db.setUnsyncedTables([table11])
-		db.close()
-		db.open()
-		XCTAssert(db.unsyncedTables.count == 1)
+		await db.setUnsyncedTables([table11])
+		await db.close()
+		await db.open()
+		let unsyncedTables = await db.unsyncedTables
+		#expect(unsyncedTables.count == 1)
 
 		// will be deleted
-		db.setValueInTable(DBTable(name: "table8"), for: "testKey1", to: "{\"numValue\":10,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table8"), for: "testKey1", to: "{\"numValue\":10,\"account\":\"ACCT1\",\"dateValue\":\"2014-8-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5]}", autoDeleteAfter: nil)
 
 		// these entries will be deleted because of a drop table
-		db.setValueInTable(DBTable(name: "table9"), for: "testKey2", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
-		db.setValueInTable(DBTable(name: "table9"), for: "testKey3", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
-		db.setValueInTable(DBTable(name: "table9"), for: "testKey4", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
-		db.setValueInTable(DBTable(name: "table9"), for: "testKey5", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table9"), for: "testKey2", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table9"), for: "testKey3", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table9"), for: "testKey4", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table9"), for: "testKey5", to: "{\"numValue\":2,\"account\":\"TEST1\",\"dateValue\":\"2014-9-19T18:23:42.434-05:00\",\"arrayValue\":[6,7,8,9,10]}", autoDeleteAfter: nil)
 
 		// this value will be unchanged due to timeStamp
-		db.setValueInTable(DBTable(name: "table10"), for: "testKey3", to: "{\"numValue\":13,\"account\":\"TEST2\",\"dateValue\":\"2014-10-19T18:23:42.434-05:00\",\"arrayValue\":[11,12,13,14,15]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table10"), for: "testKey3", to: "{\"numValue\":13,\"account\":\"TEST2\",\"dateValue\":\"2014-10-19T18:23:42.434-05:00\",\"arrayValue\":[11,12,13,14,15]}", autoDeleteAfter: nil)
 
 		// this value will be updated
-		db.setValueInTable(DBTable(name: "table12"), for: "testKey5", to: "{\"numValue\":15,\"account\":\"ACCT3\",\"dateValue\":\"2014-12-19T18:23:42.434-05:00\",\"arrayValue\":[21,22,23,24,25]}", autoDeleteAfter: nil)
+		await db.setValueInTable(DBTable(name: "table12"), for: "testKey5", to: "{\"numValue\":15,\"account\":\"ACCT3\",\"dateValue\":\"2014-12-19T18:23:42.434-05:00\",\"arrayValue\":[21,22,23,24,25]}", autoDeleteAfter: nil)
 
 		let syncFileContents = """
-		{
-		  "sourceDB": "58D200A048F9",
-		  "lastSequence": 1000,
-		  "logEntries": [
-			{
-			  "timeStamp": "\(AgileDB.stringValueForDate(Date()))",
-			  "key": "testKey1",
-			  "activity": "D",
-			  "tableName": "table8"
-			},
-			{
-			  "timeStamp": "2010-01-15T16:22:55.262-05:00",
-			  "value": {
-				"addedDateTime": "2015-01-15T16:22:55.246-05:00",
-				"dateValue": "2014-10-19T18:23:42.434-05:00",
-				"numValue": 3,
-				"updatedDateTime": "2015-01-15T16:22:55.258-05:00",
-				"arrayValue": [11,12]
-			  },
-			  "key": "testKey3",
-			  "activity": "U",
-			  "tableName": "table10"
-			},
-			{
-			  "timeStamp": "2015-01-15T16:22:55.276-05:00",
-			  "key": "testKey4",
-			  "activity": "D",
-			  "tableName": "table11"
-			},
-			{
-			  "timeStamp": "\(AgileDB.stringValueForDate(Date()))",
-			  "value": {
-				"addedDateTime": "2015-01-15T16:22:55.277-05:00",
-				"account": "ACCT3",
-				"dateValue": "2014-12-19T18:23:42.434-05:00",
-				"numValue": 5,
-				"updatedDateTime": "2015-01-15T16:22:55.277-05:00",
-				"arrayValue": [21,22,23,24,25]
-			  },
-			  "key": "testKey5",
-			  "activity": "U",
-			  "tableName": "table12"
-			},
-			{
-			  "tableName": "table9",
-			  "activity": "X",
-			  "timeStamp": "\(AgileDB.stringValueForDate(Date()))"
-			}
-		  ]
-		}
-		"""
+  {
+  "sourceDB": "58D200A048F9",
+  "lastSequence": 1000,
+  "logEntries": [
+   {
+  "timeStamp": "\(AgileDB.stringValueForDate(Date()))",
+  "key": "testKey1",
+  "activity": "D",
+  "tableName": "table8"
+   },
+   {
+   "timeStamp": "2010-01-15T16:22:55.262-05:00",
+   "value": {
+  "addedDateTime": "2015-01-15T16:22:55.246-05:00",
+  "dateValue": "2014-10-19T18:23:42.434-05:00",
+  "numValue": 3,
+  "updatedDateTime": "2015-01-15T16:22:55.258-05:00",
+  "arrayValue": [11,12]
+   },
+   "key": "testKey3",
+   "activity": "U",
+   "tableName": "table10"
+   },
+   {
+  "timeStamp": "2015-01-15T16:22:55.276-05:00",
+  "key": "testKey4",
+  "activity": "D",
+  "tableName": "table11"
+   },
+   {
+   "timeStamp": "\(AgileDB.stringValueForDate(Date()))",
+   "value": {
+  "addedDateTime": "2015-01-15T16:22:55.277-05:00",
+  "account": "ACCT3",
+  "dateValue": "2014-12-19T18:23:42.434-05:00",
+  "numValue": 5,
+  "updatedDateTime": "2015-01-15T16:22:55.277-05:00",
+  "arrayValue": [21,22,23,24,25]
+   },
+   "key": "testKey5",
+   "activity": "U",
+   "tableName": "table12"
+   },
+   {
+  "tableName": "table9",
+  "activity": "X",
+  "timeStamp": "\(AgileDB.stringValueForDate(Date()))"
+   }
+  ]
+  }
+  """
 
 		let searchPaths = NSSearchPathForDirectoriesInDomains(.downloadsDirectory, .userDomainMask, true)
 		let documentFolderPath = searchPaths[0]
@@ -201,41 +195,45 @@ class SyncTests: XCTestCase {
 			fileHandle.closeFile()
 			let fileURL = URL(fileURLWithPath: logFilePath)
 
-			let (results, _, _) = db.processSyncFileAtURL(fileURL, syncProgress: nil)
-			XCTAssert(results, "sync log not processed")
+			let (results, _, _) = await db.processSyncFileAtURL(fileURL, syncProgress: nil)
+			#expect(results, "sync log not processed")
 
 			// check for proper changes
-			XCTAssert(!db.tableHasKey(table: DBTable(name: "table8"), key: "testKey1")!, "table8 still has entry")
+			let table8HasKey = try await db.tableHasKey(table: DBTable(name: "table8"), key: "testKey1")
+			#expect(!table8HasKey, "table8 still has entry")
 
-			XCTAssert(!db.tableHasKey(table: DBTable(name: "table9"), key: "testKey2")!, "drop table 9 failed")
-			XCTAssert(!db.tableHasKey(table: DBTable(name: "table9"), key: "testKey3")!, "drop table 9 failed")
-			XCTAssert(!db.tableHasKey(table: DBTable(name: "table9"), key: "testKey4")!, "drop table 9 failed")
-			XCTAssert(!db.tableHasKey(table: DBTable(name: "table9"), key: "testKey5")!, "drop table 9 failed")
+			let table9HasKey2 = try await db.tableHasKey(table: DBTable(name: "table9"), key: "testKey2")
+			#expect(!table9HasKey2, "drop table 9 failed")
 
-			var jsonValue = db.valueFromTable(DBTable(name: "table10"), for: "testKey3")
+			let table9HasKey3 = try await db.tableHasKey(table: DBTable(name: "table9"), key: "testKey3")
+			#expect(!table9HasKey3, "drop table 9 failed")
+
+			let table9HasKey4 = try await db.tableHasKey(table: DBTable(name: "table9"), key: "testKey4")
+			#expect(!table9HasKey4, "drop table 9 failed")
+
+			let table9HasKey5 = try await db.tableHasKey(table: DBTable(name: "table9"), key: "testKey5")
+			#expect(!table9HasKey5, "drop table 9 failed")
+
+			var jsonValue = try await db.valueFromTable(DBTable(name: "table10"), for: "testKey3")
 			// compare dict values
-			if let jsonValue = jsonValue {
-				let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-				let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
-				let numValue = objectValues!["numValue"] as! Int
+			let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
+			let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
+			let numValue = objectValues!["numValue"] as! Int
 
-				XCTAssert(numValue == 13, "number unexpectedly got changed")
-			}
+			#expect(numValue == 13, "number unexpectedly got changed")
 
-			jsonValue = db.valueFromTable(DBTable(name: "table12"), for: "testKey5")
+			jsonValue = try await db.valueFromTable(DBTable(name: "table12"), for: "testKey5")
 			// compare dict values
-			if let jsonValue = jsonValue {
-				let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-				let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
-				let numValue = objectValues!["numValue"] as! Int
+			let dataValue2 = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
+			let objectValues2 = (try? JSONSerialization.jsonObject(with: dataValue2, options: .mutableContainers)) as? [String: AnyObject]
+			let numValue2 = objectValues2!["numValue"] as! Int
 
-				XCTAssert(numValue == 5, "number was not changed")
-
-
-			}
+			#expect(numValue2 == 5, "number was not changed")
 		} else {
-			XCTAssert(false, "unable to create log file")
+			Issue.record("unable to create log file")
 		}
+
+		await removeDB(db)
 	}
 }
 
