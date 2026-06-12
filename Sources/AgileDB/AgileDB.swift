@@ -1043,7 +1043,7 @@ extension AgileDB {
 			}
 		}
 
-		if let testKey = testKey {
+		if let testKey {
 			// Test whether the specific key satisfies the publisher's conditions; the key
 			// clause must be ANDed with the conditions, not replace them, otherwise every
 			// publisher for the table would match regardless of its conditions.

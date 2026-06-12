@@ -124,4 +124,181 @@ struct ConditionTests {
 
 		await removeDB(db)
 	}
+
+	@Test("inList string condition")
+	func inListStringCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table70"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"account\":\"ACCT1\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"account\":\"ACCT2\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"account\":\"ACCT3\"}", autoDeleteAfter: nil)
+
+		let condition = DBCondition(set: 0, objectKey: "account", conditionOperator: .inList, value: ["ACCT1", "ACCT3"] as AnyObject)
+		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
+
+		#expect(keys.count == 2)
+		#expect(keys.contains("testKey1"))
+		#expect(keys.contains("testKey3"))
+
+		await removeDB(db)
+	}
+
+	@Test("inList int condition")
+	func inListIntCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table71"
+		for value in 1...5 {
+			await db.setValueInTable(table, for: "testKey\(value)", to: "{\"numValue\":\(value)}", autoDeleteAfter: nil)
+		}
+
+		let condition = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .inList, value: [1, 3, 5] as AnyObject)
+		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
+
+		#expect(keys.count == 3)
+		#expect(keys.contains("testKey1"))
+		#expect(keys.contains("testKey3"))
+		#expect(keys.contains("testKey5"))
+
+		await removeDB(db)
+	}
+
+	@Test("inList double condition")
+	func inListDoubleCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table72"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"cost\":1.5}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"cost\":2.5}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"cost\":3.5}", autoDeleteAfter: nil)
+
+		let condition = DBCondition(set: 0, objectKey: "cost", conditionOperator: .inList, value: [1.5, 3.5] as AnyObject)
+		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
+
+		#expect(keys.count == 2)
+		#expect(keys.contains("testKey1"))
+		#expect(keys.contains("testKey3"))
+
+		await removeDB(db)
+	}
+
+	@Test("Contains string array condition")
+	func containsStringArrayCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table73"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1,\"tags\":[\"red\",\"green\",\"blue\"]}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":2,\"tags\":[\"green\",\"yellow\"]}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":3,\"tags\":[\"black\",\"white\"]}", autoDeleteAfter: nil)
+
+		let condition = DBCondition(set: 0, objectKey: "tags", conditionOperator: .contains, value: "green" as AnyObject)
+		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
+
+		#expect(keys.count == 2)
+		#expect(keys.contains("testKey1"))
+		#expect(keys.contains("testKey2"))
+
+		await removeDB(db)
+	}
+
+	@Test("Contains double array condition")
+	func containsDoubleArrayCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table74"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1,\"prices\":[1.5,2.5,3.5]}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":2,\"prices\":[2.5,4.5]}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":3,\"prices\":[5.5,6.5]}", autoDeleteAfter: nil)
+
+		let condition = DBCondition(set: 0, objectKey: "prices", conditionOperator: .contains, value: 2.5 as AnyObject)
+		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
+
+		#expect(keys.count == 2)
+		#expect(keys.contains("testKey1"))
+		#expect(keys.contains("testKey2"))
+
+		await removeDB(db)
+	}
+
+	@Test("Date condition")
+	func dateCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table75"
+		let earlyDate = Date(timeIntervalSince1970: 1_000_000)
+		let middleDate = Date(timeIntervalSince1970: 2_000_000)
+		let lateDate = Date(timeIntervalSince1970: 3_000_000)
+
+		await db.setValueInTable(table, for: "testKey1", to: "{\"dateValue\":\"\(AgileDB.stringValueForDate(earlyDate))\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"dateValue\":\"\(AgileDB.stringValueForDate(lateDate))\"}", autoDeleteAfter: nil)
+
+		let lessThanCondition = DBCondition(set: 0, objectKey: "dateValue", conditionOperator: .lessThan, value: middleDate as AnyObject)
+		let earlierKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [lessThanCondition]))
+		#expect(earlierKeys.count == 1)
+		#expect(earlierKeys.contains("testKey1"))
+
+		let greaterThanCondition = DBCondition(set: 0, objectKey: "dateValue", conditionOperator: .greaterThan, value: middleDate as AnyObject)
+		let laterKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [greaterThanCondition]))
+		#expect(laterKeys.count == 1)
+		#expect(laterKeys.contains("testKey2"))
+
+		await removeDB(db)
+	}
+
+	@Test("Bool condition")
+	func boolCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table76"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1,\"flag\":true}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":2,\"flag\":false}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":3,\"flag\":true}", autoDeleteAfter: nil)
+
+		let trueCondition = DBCondition(set: 0, objectKey: "flag", conditionOperator: .equal, value: true as AnyObject)
+		let trueKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [trueCondition]))
+		#expect(trueKeys.count == 2)
+		#expect(trueKeys.contains("testKey1"))
+		#expect(trueKeys.contains("testKey3"))
+
+		let falseCondition = DBCondition(set: 0, objectKey: "flag", conditionOperator: .equal, value: false as AnyObject)
+		let falseKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [falseCondition]))
+		#expect(falseKeys.count == 1)
+		#expect(falseKeys.contains("testKey2"))
+
+		await removeDB(db)
+	}
+
+	@Test("Comparison operators")
+	func comparisonOperators() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table77"
+		for value in 1...5 {
+			await db.setValueInTable(table, for: "testKey\(value)", to: "{\"numValue\":\(value)}", autoDeleteAfter: nil)
+		}
+
+		let notEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .notEqual, value: 3 as AnyObject)
+		let notEqualKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [notEqual]))
+		#expect(notEqualKeys.count == 4)
+		#expect(!notEqualKeys.contains("testKey3"))
+
+		let lessThan = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .lessThan, value: 3 as AnyObject)
+		let lessThanKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [lessThan]))
+		#expect(lessThanKeys.count == 2)
+		#expect(lessThanKeys.contains("testKey1"))
+		#expect(lessThanKeys.contains("testKey2"))
+
+		let lessThanOrEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .lessThanOrEqual, value: 3 as AnyObject)
+		let lessThanOrEqualKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [lessThanOrEqual]))
+		#expect(lessThanOrEqualKeys.count == 3)
+
+		let greaterThanOrEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .greaterThanOrEqual, value: 4 as AnyObject)
+		let greaterThanOrEqualKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [greaterThanOrEqual]))
+		#expect(greaterThanOrEqualKeys.count == 2)
+		#expect(greaterThanOrEqualKeys.contains("testKey4"))
+		#expect(greaterThanOrEqualKeys.contains("testKey5"))
+
+		await removeDB(db)
+	}
 }
