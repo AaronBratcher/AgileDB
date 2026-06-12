@@ -66,6 +66,10 @@ public actor AgileDB {
 		return dateFormatter
 	}()
 
+	public func setAutoCloseTimeout(_ timeout: Int) {
+		self.autoCloseTimeout = timeout
+	}
+	
 	// MARK: - Private properties
 	private struct DBTables {
 		private var tables: [DBTable] = []

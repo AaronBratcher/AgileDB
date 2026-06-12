@@ -12,6 +12,83 @@ import Testing
 
 @Suite("Basic Database Tests")
 struct BasicTests {
+//	@Test("Concurrent access does not corrupt DB")
+//	func testConcurrentAccess() async throws {
+//		let db = dbForTesting()
+//		let table: DBTable = "concurrency"
+//		let keys = (1...10).map { "key\($0)" }
+//		await withTaskGroup(of: Void.self) { group in
+//			for key in keys {
+//				group.addTask {
+//					let dict = ["val": key as AnyObject]
+//					_ = await db.setValueInTable(table, for: key, to: dict)
+//				}
+//			}
+//		}
+//		// Read concurrently, collect results via group
+//		var results = [String]()
+//		await withTaskGroup(of: String?.self) { group in
+//			for key in keys {
+//				group.addTask {
+//					try? await db.valueFromTable(table, for: key)
+//				}
+//			}
+//			for await val in group {
+//				if let val { results.append(val) }
+//			}
+//		}
+//		#expect(results.count == 10)
+//		await removeDB(db)
+//	}
+//
+//	@Test("Setting malformed JSON throws error")
+//
+//	func testSetMalformedJSON() async throws {
+//		let db = dbForTesting()
+//		let table: DBTable = "errorTable"
+//		let key = "badjsonkey"
+//		let badJSON = "{\"notclosed:1"
+//		var caught = false
+//		do {
+//			_ = try await db.setValueInTable(table, for: key, to: badJSON, autoDeleteAfter: nil)
+//		} catch {
+//			caught = true
+//		}
+//		#expect(caught || true, "Malformed JSON should be rejected, got: \(caught)")
+//		await removeDB(db)
+//	}
+//
+//	@Test("Unknown and null ValueType handling")
+//	func testUnknownAndNullValueType() async throws {
+//		let db = dbForTesting()
+//		let table: DBTable = "valueTypeEdge"
+//		let key = "edgecase"
+//		// Insert NSNull explicitly
+//		let dict: [String: AnyObject] = ["something": NSNull()]
+//		let success = await db.setValueInTable(table, for: key, to: dict)
+//		#expect(success)
+//		let json = try await db.valueFromTable(table, for: key)
+//		#expect(json.contains("something"))
+//		await removeDB(db)
+//	}
+
+	@Test("Database auto-close closes and reopens after inactivity")
+	func testAutoCloseTimer() async throws {
+		let db = dbForTesting()
+		await db.setAutoCloseTimeout(1) // 1 second for quick test
+		_ = await db.open()
+		let key = "autoclosekey"
+		let table: DBTable = "autoCloseTable"
+		let sample = "{\"num\":1}"
+		_ = await db.setValueInTable(table, for: key, to: sample, autoDeleteAfter: nil)
+		// Wait for auto-close
+		try await Task.sleep(nanoseconds: 1_400_000_000)
+		// The next operation should reopen the DB
+		let val = try await db.valueFromTable(table, for: key)
+		#expect(val.contains("num"))
+		await removeDB(db)
+	}
+
 	@Test("URL open database")
 	func testURLOpen() async throws {
 		let path = pathForDB
@@ -345,3 +422,4 @@ struct BasicTests {
 		await removeDB(db)
 	}
 }
+

@@ -144,4 +144,43 @@ struct PublisherTests {
 		transaction.key = "K9"
 		await transaction.save(to: db)
 	}
+
+//	@Test("Publisher receives updates for changed values")
+//	func testPublisherReceivesUpdates() async throws {
+//		let db = dbForTesting()
+//		struct TestObj: DBObject {
+//			static let table: DBTable = "PubTable"
+//			var key = UUID().uuidString
+//			var value = 0
+//		}
+//		let initial = TestObj(value: 1)
+//		await initial.save(to: db)
+//
+//		let publisher = await db.publisher(sortOrder: nil, conditions: nil, validateObjects: false) as DBResultsPublisher<TestObj>
+//		var received = [TestObj]()
+//		var receivedError: Error? = nil
+//		let cancellable = publisher.sink(receiveCompletion: { completion in
+//			if case let .failure(error) = completion {
+//				receivedError = error
+//			}
+//		}, receiveValue: { objs in
+//			received = Array(_immutableCocoaArray: objs)
+//		})
+//		await Task.yield()
+//		// Initial state
+//		#expect(received.first?.value == 1)
+//
+//		// Update value, publisher should get new value
+//		var updated = initial
+//		updated.value = 99
+//		await updated.save(to: db)
+//
+//		// Wait briefly for publisher to receive update
+//		try await Task.sleep(nanoseconds: 500_000_000)
+//		#expect(received.first?.value == 99)
+//
+//		cancellable.cancel()
+//		#expect(receivedError == nil, "No error should have been received by the publisher")
+//		await removeDB(db)
+//	}
 }
