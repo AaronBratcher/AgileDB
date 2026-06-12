@@ -1,5 +1,4 @@
 # AgileDB
-[![CocoaPods](https://img.shields.io/cocoapods/v/AgileDB.svg)](https://cocoapods.org/)
 
 - A SQLite database wrapper written in Swift that requires no SQL knowledge to use.
 - No need to keep track of columns used in the database; it's automatic.
