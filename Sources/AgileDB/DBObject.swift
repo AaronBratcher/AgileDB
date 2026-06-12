@@ -30,7 +30,7 @@ extension DBObject {
 	*/
 	public init?(db: AgileDB, key: String) async {
 		guard let dictionaryValue = try? await db.dictValueFromTable(Self.table, for: key) as [String: AnyObject],
-		      let dbObject: Self = Self.dbObjectWithDict(dictionaryValue, db: db, for: key)
+		      let dbObject: Self = await Self.dbObjectWithDict(dictionaryValue, db: db, for: key)
 		else { return nil }
 
 		self = dbObject
@@ -92,7 +92,7 @@ extension DBObject {
     */
 	public static func load(from db: AgileDB, for key: String) async throws -> Self {
 		let dictionaryValue = try await db.dictValueFromTable(table, for: key)
-		guard let dbObject = dbObjectWithDict(dictionaryValue, db: db, for: key) else {
+		guard let dbObject = await dbObjectWithDict(dictionaryValue, db: db, for: key) else {
 			throw DBError.cannotParseData
 		}
 
@@ -114,19 +114,44 @@ extension DBObject {
 	public static func loadObjectFromDB(_ db: AgileDB, for key: String, queue: DispatchQueue? = nil, completion: @escaping (Self) -> Void) -> DBCommandToken? {
 		Task {
 			if let dictionaryValue = try? await db.dictValueFromTable(table, for: key),
-			   let dbObject = dbObjectWithDict(dictionaryValue, db: db, for: key) {
+			   let dbObject = await dbObjectWithDict(dictionaryValue, db: db, for: key) {
 				(queue ?? .main).async { completion(dbObject) }
 			}
 		}
 		return nil
 	}
 
-	private static func dbObjectWithDict(_ dictionaryValue: [String: AnyObject], db: AgileDB, for key: String) -> Self? {
+	private static func dbObjectWithDict(_ dictionaryValue: [String: AnyObject], db: AgileDB, for key: String) async -> Self? {
 		var dictionaryValue = dictionaryValue
-
 		dictionaryValue["key"] = key as AnyObject
-		let decoder = DBObjectDecoder(dictionaryValue, db: db)
-		return try? Self(from: decoder)
+
+		// Nested DBObjects are stored only by key. Decoding is synchronous but loading a
+		// nested object requires `await`, so decode in a loop: each pass that encounters
+		// not-yet-loaded nested objects records them and aborts, then the missing
+		// dictionaries are loaded asynchronously and the decode is retried.
+		let state = DBObjectDecoderState()
+
+		while true {
+			do {
+				let decoder = DBObjectDecoder(dictionaryValue, db: db, state: state)
+				return try Self(from: decoder)
+			} catch is NeedsNestedLoad {
+				let misses = state.misses
+				state.misses = []
+				if misses.isEmpty { return nil }
+
+				for miss in misses {
+					let cacheKey = DBObjectDecoderState.cacheKey(table: miss.table, key: miss.key)
+					if state.cache[cacheKey] != nil { continue }
+					guard let nestedDict = try? await db.dictValueFromTable(miss.table, for: miss.key) else {
+						return nil
+					}
+					state.cache[cacheKey] = nestedDict
+				}
+			} catch {
+				return nil
+			}
+		}
 	}
 
 	/**

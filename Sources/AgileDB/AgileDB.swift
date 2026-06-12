@@ -469,9 +469,15 @@ public actor AgileDB {
 	public func deleteFromTable(_ table: DBTable, for key: String) async -> Bool {
 		assert(key != "", "key must be provided")
 
+		// Capture the publishers whose results currently include this key before deleting it.
+		// Afterwards the key no longer matches any query, so membership can't be determined.
+		let affectedPublishers = await publishersContaining(key: key, in: table)
+
 		let deleted = await deleteForKey(table: table, key: key, autoDelete: false, sourceDB: dbInstanceKey, originalDB: dbInstanceKey)
 		if deleted {
-			await updatePublisherResults(for: key, in: table)
+			for publisher in affectedPublishers {
+				publisher.updateSubject()
+			}
 		}
 
 		return deleted
@@ -619,8 +625,10 @@ public actor AgileDB {
 		}
 
 		unsyncedTables = [DBTable]()
+		await sqlExecute("delete from __unsyncedTables")
 		for table in tables {
 			await sqlExecute("delete from __synclog where tableName = '\(table)'")
+			await sqlExecute("insert into __unsyncedTables(tableName) values('\(table)')")
 			unsyncedTables.append(table)
 		}
 
@@ -921,7 +929,7 @@ public actor AgileDB {
 			unsyncedTables = [DBTable]()
 			let unsyncedTableResults = await sqlRows("select tableName from __unsyncedTables")
 			if let unsyncedTableResults = unsyncedTableResults {
-				self.unsyncedTables = unsyncedTableResults.map({ $0.values[0] as! DBTable })
+				self.unsyncedTables = unsyncedTableResults.map({ DBTable(name: $0.values[0] as! String) })
 			}
 		}
 
@@ -1036,7 +1044,15 @@ extension AgileDB {
 		}
 
 		if let testKey = testKey {
-			whereClause = " where a.key = '\(esc(testKey))'"
+			// Test whether the specific key satisfies the publisher's conditions; the key
+			// clause must be ANDed with the conditions, not replace them, otherwise every
+			// publisher for the table would match regardless of its conditions.
+			let keyClause = "a.key = '\(esc(testKey))'"
+			if whereClause.isNotEmpty {
+				whereClause = " where \(keyClause) AND (\n\(whereClause)\n)"
+			} else {
+				whereClause = " where \(keyClause)"
+			}
 		} else if (conditions ?? []).isNotEmpty && whereClause.isNotEmpty {
 			whereClause = " where 1=1 AND (\n\(whereClause)\n)"
 		}

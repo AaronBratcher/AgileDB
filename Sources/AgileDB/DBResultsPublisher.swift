@@ -115,7 +115,10 @@ extension DBResultsPublisher: Publisher {
 
 			subscriber.receive(subscription: self)
 
-			cancellable = fetchPublisher.subject.sink(receiveCompletion: { completion in
+			// Drop the CurrentValueSubject's initial empty placeholder so the first value
+			// delivered to the subscriber is the result of the asynchronous fetch started
+			// in updateSubject(), rather than the empty seed value.
+			cancellable = fetchPublisher.subject.dropFirst().sink(receiveCompletion: { completion in
 				subscriber.receive(completion: completion)
 			}, receiveValue: { value in
 				_ = subscriber.receive(value)
