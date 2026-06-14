@@ -453,7 +453,7 @@ public actor AgileDB {
 	  - returns: [String: AnyObject]
 	  - throws: DBError
 	  */
-	public func dictValueFromTable(_ table: DBTable, for key: String) async throws -> [String: AnyObject] {
+	public func dictValueFromTable(_ table: DBTable, for key: String) async throws -> [String: any Sendable] {
 		guard let value = await dictValueFromTable(table, for: key, includeDates: false) else {
 			throw DBError.other(0)
 		}

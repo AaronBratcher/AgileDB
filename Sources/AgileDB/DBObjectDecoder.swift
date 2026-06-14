@@ -28,7 +28,7 @@ the request in `misses` and aborts with `NeedsNestedLoad`; the async driver then
 the missing dictionaries and retries the decode.
 */
 final class DBObjectDecoderState {
-	var cache: [String: [String: AnyObject]] = [:]
+	var cache: [String: [String: any Sendable]] = [:]
 	var misses: [(table: DBTable, key: String)] = []
 
 	static func cacheKey(table: DBTable, key: String) -> String {
@@ -43,11 +43,11 @@ class DBObjectDecoder: Decoder {
 	var codingPath: [CodingKey] = []
 	var userInfo: [CodingUserInfoKey: Any] = [:]
 
-	let dict: [String: AnyObject]
+	let dict: [String: any Sendable]
 	let db: AgileDB
 	let state: DBObjectDecoderState
 
-	init(_ dict: [String: AnyObject], db: AgileDB, state: DBObjectDecoderState = DBObjectDecoderState()) {
+	init(_ dict: [String: any Sendable], db: AgileDB, state: DBObjectDecoderState = DBObjectDecoderState()) {
 		self.dict = dict
 		self.db = db
 		self.state = state
@@ -95,11 +95,11 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	let codingPath: [CodingKey] = []
 	var allKeys: [K] { return dict.keys.compactMap { K(stringValue: $0) } }
 
-	private let dict: [String: AnyObject]
+	private let dict: [String: any Sendable]
 	private let db: AgileDB
 	private let state: DBObjectDecoderState
 
-	init(dict: [String: AnyObject], db: AgileDB, state: DBObjectDecoderState) {
+	init(dict: [String: any Sendable], db: AgileDB, state: DBObjectDecoderState) {
 		self.dict = dict
 		self.db = db
 		self.state = state
@@ -158,9 +158,9 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 		return objects
 	}
 
-	private func decodeNested(_ type: DBObject.Type, dict: [String: AnyObject], key: String) throws -> DBObject {
+	private func decodeNested(_ type: DBObject.Type, dict: [String: any Sendable], key: String) throws -> DBObject {
 		var nestedDict = dict
-		nestedDict["key"] = key as AnyObject
+		nestedDict["key"] = key
 		let nestedDecoder = DBObjectDecoder(nestedDict, db: db, state: state)
 		return try type.init(from: nestedDecoder)
 	}

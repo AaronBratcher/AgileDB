@@ -8,7 +8,7 @@
 
 import Foundation
 
-public protocol DBObject: Codable {
+public protocol DBObject: Codable, Sendable {
 	static var table: DBTable { get }
 	var key: String { get set }
 	var codingKeys: [CodingKey] { get }
@@ -121,7 +121,7 @@ extension DBObject {
 		return nil
 	}
 
-	private static func dbObjectWithDict(_ dictionaryValue: [String: AnyObject], db: AgileDB, for key: String) async -> Self? {
+	private static func dbObjectWithDict(_ dictionaryValue: [String: any Sendable], db: AgileDB, for key: String) async -> Self? {
 		var dictionaryValue = dictionaryValue
 		dictionaryValue["key"] = key as AnyObject
 
@@ -143,7 +143,7 @@ extension DBObject {
 				for miss in misses {
 					let cacheKey = DBObjectDecoderState.cacheKey(table: miss.table, key: miss.key)
 					if state.cache[cacheKey] != nil { continue }
-					guard let nestedDict = try? await db.dictValueFromTable(miss.table, for: miss.key) else {
+					guard let nestedDict = try? await db.dictValueFromTable(miss.table, for: miss.key) as [String: AnyObject] else {
 						return nil
 					}
 					state.cache[cacheKey] = nestedDict

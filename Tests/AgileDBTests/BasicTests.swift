@@ -12,65 +12,56 @@ import Testing
 
 @Suite("Basic Database Tests")
 struct BasicTests {
-//	@Test("Concurrent access does not corrupt DB")
-//	func testConcurrentAccess() async throws {
-//		let db = dbForTesting()
-//		let table: DBTable = "concurrency"
-//		let keys = (1...10).map { "key\($0)" }
-//		await withTaskGroup(of: Void.self) { group in
-//			for key in keys {
-//				group.addTask {
-//					let dict = ["val": key as AnyObject]
-//					_ = await db.setValueInTable(table, for: key, to: dict)
-//				}
-//			}
-//		}
-//		// Read concurrently, collect results via group
-//		var results = [String]()
-//		await withTaskGroup(of: String?.self) { group in
-//			for key in keys {
-//				group.addTask {
-//					try? await db.valueFromTable(table, for: key)
-//				}
-//			}
-//			for await val in group {
-//				if let val { results.append(val) }
-//			}
-//		}
-//		#expect(results.count == 10)
-//		await removeDB(db)
-//	}
-//
-//	@Test("Setting malformed JSON throws error")
-//
-//	func testSetMalformedJSON() async throws {
-//		let db = dbForTesting()
-//		let table: DBTable = "errorTable"
-//		let key = "badjsonkey"
-//		let badJSON = "{\"notclosed:1"
-//		var caught = false
-//		do {
-//			_ = try await db.setValueInTable(table, for: key, to: badJSON, autoDeleteAfter: nil)
-//		} catch {
-//			caught = true
-//		}
-//		#expect(caught || true, "Malformed JSON should be rejected, got: \(caught)")
-//		await removeDB(db)
-//	}
-//
-//	@Test("Unknown and null ValueType handling")
-//	func testUnknownAndNullValueType() async throws {
-//		let db = dbForTesting()
-//		let table: DBTable = "valueTypeEdge"
-//		let key = "edgecase"
-//		// Insert NSNull explicitly
-//		let dict: [String: AnyObject] = ["something": NSNull()]
-//		let success = await db.setValueInTable(table, for: key, to: dict)
-//		#expect(success)
-//		let json = try await db.valueFromTable(table, for: key)
-//		#expect(json.contains("something"))
-//		await removeDB(db)
-//	}
+	@Test("Concurrent access does not corrupt DB")
+	func testConcurrentAccess() async throws {
+		let db = dbForTesting()
+		let table: DBTable = "concurrency"
+		let keys = (1...10).map { "key\($0)" }
+
+		// Seed every key so that concurrent reads below always find a value.
+		// Each key stores a stable value of {"val": key}, so a read is correct
+		// whether it observes the seed or a concurrent re-write.
+		for key in keys {
+			_ = await db.setValueInTable(table, for: key, to: ["val": key as AnyObject])
+		}
+
+		// Hammer the DB with interleaved writes and reads in a single task group
+		// so reads can land in the middle of writes. Each read returns the key it
+		// read along with the JSON it got back.
+		let readResults = await withTaskGroup(of: (key: String, json: String)?.self) { group in
+			for key in keys {
+				// Concurrent re-write of the key (value is unchanged).
+				group.addTask {
+					_ = await db.setValueInTable(table, for: key, to: ["val": key as AnyObject])
+					return nil
+				}
+				// Concurrent read of the key.
+				group.addTask {
+					guard let json = try? await db.valueFromTable(table, for: key) else { return nil }
+					return (key, json)
+				}
+			}
+
+			var collected = [String: String]()
+			for await result in group {
+				if let result { collected[result.key] = result.json }
+			}
+			return collected
+		}
+
+		// Every key must have been readable during the concurrent access.
+		#expect(readResults.count == keys.count)
+
+		// Each stored value must match the key it was written for — proving the
+		// concurrent writes did not cross-contaminate rows.
+		for key in keys {
+			_ = try #require(readResults[key])
+			let dict = try await db.dictValueFromTable(table, for: key)
+			#expect(dict["val"] as? String == key)
+		}
+
+		await removeDB(db)
+	}
 
 	@Test("Database auto-close closes and reopens after inactivity")
 	func testAutoCloseTimer() async throws {
@@ -132,7 +123,7 @@ struct BasicTests {
 		let key = "SIMPLEINSERTKEY"
 		let sample = "{\"numValue\":1,\"dateValue\":\"2014-11-19T18:23:42.434-05:00\",\"link\":true}"
 		let sampleData = sample.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-		let sampleDict = (try? JSONSerialization.jsonObject(with: sampleData, options: .mutableContainers)) as? [String: AnyObject]
+		let sampleDict = (try? JSONSerialization.jsonObject(with: sampleData, options: .mutableContainers)) as? [String: any Sendable]
 		let successful = await db.setValueInTable(table, for: key, to: sample, autoDeleteAfter: nil)
 
 		#expect(successful, "setValueFailed")
@@ -141,7 +132,7 @@ struct BasicTests {
 
 		// compare dict values
 		let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
+		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: any Sendable]
 		let equalDicts = objectValues?.count == sampleDict?.count
 		let linked = objectValues!["link"] as! Bool
 
@@ -159,7 +150,7 @@ struct BasicTests {
 		let key = "ARRAYINSERTKEY"
 		let sample = "{\"numValue\":1,\"dateValue\":\"2014-11-19T18:23:42.434-05:00\",\"arrayValue\":[1,2,3,4,5],\"array2Value\":[\"1\",\"b\"]}"
 		let sampleData = sample.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-		let sampleDict = (try? JSONSerialization.jsonObject(with: sampleData, options: .mutableContainers)) as? [String: AnyObject]
+		let sampleDict = (try? JSONSerialization.jsonObject(with: sampleData, options: .mutableContainers)) as? [String: any Sendable]
 		let successful = await db.setValueInTable(table, for: key, to: sample, autoDeleteAfter: nil)
 
 		#expect(successful, "setValueFailed")
@@ -170,7 +161,7 @@ struct BasicTests {
 
 		// compare dict values
 		let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
+		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: any Sendable]
 		let equalDicts = objectValues?.count == sampleDict?.count
 		#expect(equalDicts, "Dictionaries don't match")
 
@@ -209,12 +200,12 @@ struct BasicTests {
 
 		// compare dict values
 		let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
+		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: any Sendable]
 		let numValue = objectValues!["numValue"] as! Int
 
 		#expect(numValue == 2, "number didn't change properly")
 
-		let dateValue: AnyObject? = objectValues!["dateValue"]
+		let dateValue: (any Sendable)? = objectValues!["dateValue"]
 
 		#expect(dateValue == nil, "date still exists")
 

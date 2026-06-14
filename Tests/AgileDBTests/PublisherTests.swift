@@ -145,42 +145,61 @@ struct PublisherTests {
 		await transaction.save(to: db)
 	}
 
-//	@Test("Publisher receives updates for changed values")
-//	func testPublisherReceivesUpdates() async throws {
-//		let db = dbForTesting()
-//		struct TestObj: DBObject {
-//			static let table: DBTable = "PubTable"
-//			var key = UUID().uuidString
-//			var value = 0
-//		}
-//		let initial = TestObj(value: 1)
-//		await initial.save(to: db)
-//
-//		let publisher = await db.publisher(sortOrder: nil, conditions: nil, validateObjects: false) as DBResultsPublisher<TestObj>
-//		var received = [TestObj]()
-//		var receivedError: Error? = nil
-//		let cancellable = publisher.sink(receiveCompletion: { completion in
-//			if case let .failure(error) = completion {
-//				receivedError = error
-//			}
-//		}, receiveValue: { objs in
-//			received = Array(_immutableCocoaArray: objs)
-//		})
-//		await Task.yield()
-//		// Initial state
-//		#expect(received.first?.value == 1)
-//
-//		// Update value, publisher should get new value
-//		var updated = initial
-//		updated.value = 99
-//		await updated.save(to: db)
-//
-//		// Wait briefly for publisher to receive update
-//		try await Task.sleep(nanoseconds: 500_000_000)
-//		#expect(received.first?.value == 99)
-//
-//		cancellable.cancel()
-//		#expect(receivedError == nil, "No error should have been received by the publisher")
-//		await removeDB(db)
-//	}
+	@Test("Publisher receives updates for changed values")
+	func testPublisherReceivesUpdates() async throws {
+		let db = dbForTesting()
+		struct TestObj: DBObject {
+			static let table: DBTable = "PubTable"
+			var key = UUID().uuidString
+			var value = 0
+		}
+		let publisher = await db.publisher(sortOrder: nil, conditions: nil, validateObjects: false) as DBResultsPublisher<TestObj>
+
+		// DBResults is a key cursor whose objects must be loaded asynchronously, so
+		// capture each emitted result set and materialize values via object(at:).
+		var receivedResults = [DBResults<TestObj>]()
+		var receivedError: Error? = nil
+		let cancellable = publisher.sink(receiveCompletion: { completion in
+			if case let .failure(error) = completion {
+				receivedError = error
+			}
+		}, receiveValue: { results in
+			receivedResults.append(results)
+		})
+
+		// Load the first object of the most recently emitted result set.
+		func latestValue() async -> Int? {
+			guard let last = receivedResults.last else { return nil }
+			return await last.object(at: 0)?.value
+		}
+
+		// Poll the latest emission until its object holds `expected` (or time out).
+		// Polling avoids depending on a single fixed delay and tolerates the extra
+		// intermediate emissions the publisher produces around subscription time.
+		func waitForValue(_ expected: Int) async -> Int? {
+			var latest: Int?
+			for _ in 0 ..< 30 {
+				try? await Task.sleep(nanoseconds: 100_000_000)
+				latest = await latestValue()
+				if latest == expected { return latest }
+			}
+			return latest
+		}
+
+		// Save values *after* subscribing. The initial subscription emission can be
+		// dropped by the publisher's dropFirst(), but every change made once the
+		// subscription is established is reliably delivered.
+		var object = TestObj(value: 1)
+		await object.save(to: db)
+		#expect(await waitForValue(1) == 1)
+
+		// Update the value; the publisher should emit a result reflecting it.
+		object.value = 99
+		await object.save(to: db)
+		#expect(await waitForValue(99) == 99)
+
+		cancellable.cancel()
+		#expect(receivedError == nil, "No error should have been received by the publisher")
+		await removeDB(db)
+	}
 }

@@ -90,7 +90,7 @@ struct SyncTests {
 		// read in file and make sure it is valid JSON
 		if let fileHandle = FileHandle(forReadingAtPath: logFilePath) {
 			let dataValue = fileHandle.readDataToEndOfFile()
-			if let _ = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject] {
+			if let _ = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: any Sendable] {
 				// conversion successful
 			} else {
 				Issue.record("invalid sync file format")
@@ -217,7 +217,7 @@ struct SyncTests {
 			var jsonValue = try await db.valueFromTable(DBTable(name: "table10"), for: "testKey3")
 			// compare dict values
 			let dataValue = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-			let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
+			let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: any Sendable]
 			let numValue = objectValues!["numValue"] as! Int
 
 			#expect(numValue == 13, "number unexpectedly got changed")
@@ -225,7 +225,7 @@ struct SyncTests {
 			jsonValue = try await db.valueFromTable(DBTable(name: "table12"), for: "testKey5")
 			// compare dict values
 			let dataValue2 = jsonValue.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-			let objectValues2 = (try? JSONSerialization.jsonObject(with: dataValue2, options: .mutableContainers)) as? [String: AnyObject]
+			let objectValues2 = (try? JSONSerialization.jsonObject(with: dataValue2, options: .mutableContainers)) as? [String: any Sendable]
 			let numValue2 = objectValues2!["numValue"] as! Int
 
 			#expect(numValue2 == 5, "number was not changed")
