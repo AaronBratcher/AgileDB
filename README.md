@@ -7,8 +7,7 @@
 - Use the publish method to work with Combine and SwiftUI
 
 ## Installation Options ##
-- Swift Package Manager (Recommended)
-- Cocoapods `pod AgileDB`
+- Swift Package Manager
 - Include all .swift source files in your project
 
 ## Getting Started ##
