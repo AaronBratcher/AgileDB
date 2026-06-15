@@ -1620,14 +1620,24 @@ extension AgileDB {
 	/// Cancels a queued command by its block reference. `nonisolated` so `DBCommandToken.cancel()` stays synchronous.
 	nonisolated func dequeueCommand(_ commandReference: UInt) -> Bool {
 		let semaphore = DispatchSemaphore(value: 0)
-		var removed = false
+		// The semaphore establishes a happens-before ordering between the completion
+		// writing the result and this method reading it, so the box access is safe.
+		let removed = SendableBox(false)
 		dbCore.removeExecutionBlock(commandReference) { result in
-			removed = result
+			removed.value = result
 			semaphore.signal()
 		}
 		semaphore.wait()
-		return removed
+		return removed.value
 	}
+}
+
+/// A reference-type holder used to pass a value out of an `@Sendable` completion closure.
+/// Marked `@unchecked Sendable` because callers must provide their own synchronization
+/// (e.g. a semaphore) to establish a happens-before ordering around its access.
+private final class SendableBox<T>: @unchecked Sendable {
+	var value: T
+	init(_ value: T) { self.value = value }
 }
 
 // MARK: - SQLiteCore
@@ -1642,7 +1652,7 @@ private extension AgileDB {
 		}
 
 		private struct ExecutionBlock {
-			var block: Any
+			var block: @Sendable () -> Void
 			var blockReference: UInt
 		}
 
@@ -1686,14 +1696,14 @@ private extension AgileDB {
 			return valueType
 		}
 
-		func openDBFile(_ dbFilePath: String, autoCloseTimeout: Int, completion: @escaping (_ successful: BoolResults, _ openedFromOtherThread: Bool, _ fileExists: Bool) -> Void) {
+		func openDBFile(_ dbFilePath: String, autoCloseTimeout: Int, completion: @escaping @Sendable (_ successful: BoolResults, _ openedFromOtherThread: Bool, _ fileExists: Bool) -> Void) {
 			self.autoCloseTimeout = TimeInterval(exactly: autoCloseTimeout) ?? 0.0
 			self.dbFilePath = dbFilePath
 			if isDebugging {
 				print(dbFilePath)
 			}
 
-			let block = { [unowned self] in
+			let block = { @Sendable [unowned self] in
 				let fileExists = FileManager.default.fileExists(atPath: dbFilePath)
 				if self.isOpen {
 					completion(BoolResults.success(true), true, fileExists)
@@ -1724,7 +1734,7 @@ private extension AgileDB {
 		}
 
 		func close(automatically: Bool = false) {
-			let block = { [unowned self] in
+			let block = { @Sendable [unowned self] in
 				if automatically {
 					if self.automaticallyClosed || Date().timeIntervalSince1970 < (self.lastActivity + Double(self.autoCloseTimeout)) {
 						return
@@ -1742,16 +1752,16 @@ private extension AgileDB {
 			addBlock(block)
 		}
 
-		func lastID(_ completion: @escaping (_ lastInsertionID: sqlite3_int64) -> Void) {
-			let block = { [unowned self] in
+		func lastID(_ completion: @escaping @Sendable (_ lastInsertionID: sqlite3_int64) -> Void) {
+			let block = { @Sendable [unowned self] in
 				completion(sqlite3_last_insert_rowid(self.sqliteDB))
 			}
 
 			addBlock(block)
 		}
 
-		func sqlExecute(_ sql: String, completion: @escaping (_ success: Bool) -> Void) -> UInt {
-			let block = { [unowned self] in
+		func sqlExecute(_ sql: String, completion: @escaping @Sendable (_ success: Bool) -> Void) -> UInt {
+			let block = { @Sendable [unowned self] in
 				var dbps: OpaquePointer?
 				defer {
 					if dbps != nil {
@@ -1780,8 +1790,8 @@ private extension AgileDB {
 			return addBlock(block)
 		}
 
-		func sqlSelect(_ sql: String, completion: @escaping (_ results: RowResults) -> Void) -> UInt {
-			let block = { [unowned self] in
+		func sqlSelect(_ sql: String, completion: @escaping @Sendable (_ results: RowResults) -> Void) -> UInt {
+			let block = { @Sendable [unowned self] in
 				var rows = [DBRow]()
 				var dbps: OpaquePointer?
 				defer {
@@ -1838,8 +1848,8 @@ private extension AgileDB {
 			return addBlock(block)
 		}
 
-		func removeExecutionBlock(_ blockReference: UInt, completion: @escaping (_ success: Bool) -> Void) {
-			let block = {
+		func removeExecutionBlock(_ blockReference: UInt, completion: @escaping @Sendable (_ success: Bool) -> Void) {
+			let block = { @Sendable in
 				var blockArrayIndex: Int?
 				for i in 0..<self.queuedBlocks.count {
 					if self.queuedBlocks[i].blockReference == blockReference {
@@ -1871,8 +1881,8 @@ private extension AgileDB {
 
 		}
 
-		func setTableValues(objectValues: [String: any Sendable], sql: String, completion: @escaping (_ success: Bool) -> Void) {
-			let block = { [unowned self] in
+		func setTableValues(objectValues: [String: any Sendable], sql: String, completion: @escaping @Sendable (_ success: Bool) -> Void) {
+			let block = { @Sendable [unowned self] in
 				var dbps: OpaquePointer?
 				defer {
 					if dbps != nil {
@@ -1978,7 +1988,7 @@ private extension AgileDB {
 		}
 
 		@discardableResult
-		private func addBlock(_ block: Any) -> UInt {
+		private func addBlock(_ block: @escaping @Sendable () -> Void) -> UInt {
 			var executionBlockReference: UInt = 0
 
 			blockQueue.sync {
@@ -2022,9 +2032,9 @@ private extension AgileDB {
 					}
 
 					blockQueue.sync {
-						if let executionBlock = queuedBlocks.first, let block = executionBlock.block as? () -> Void {
+						if let executionBlock = queuedBlocks.first {
 							queuedBlocks.removeFirst()
-							block()
+							executionBlock.block()
 						}
 
 						hasBlocks = queuedBlocks.isNotEmpty
