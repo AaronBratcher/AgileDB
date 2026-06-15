@@ -207,7 +207,7 @@ public actor AgileDB {
 	- returns: DBCommandToken that can be used to cancel the command before it executes. Nil if the database file cannot be opened.
 	*/
 	@discardableResult
-	public func tableHasKey(table: DBTable, key: String, queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
+	public func tableHasKey(table: DBTable, key: String, queue: DispatchQueue? = nil, completion: @escaping @Sendable (BoolResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB_sync()
 		if case .failure = openResults { return nil }
 
@@ -242,7 +242,7 @@ public actor AgileDB {
 	 - returns: DBCommandToken that can be used to cancel the command before it executes. Nil if the database file cannot be opened.
 	 */
 	@discardableResult
-	public func tableHasAllKeys(table: DBTable, keys: [String], queue: DispatchQueue? = nil, completion: @escaping (BoolResults) -> Void) -> DBCommandToken? {
+	public func tableHasAllKeys(table: DBTable, keys: [String], queue: DispatchQueue? = nil, completion: @escaping @Sendable (BoolResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB_sync()
 		if case .failure = openResults { return nil }
 
@@ -310,7 +310,7 @@ public actor AgileDB {
 	- returns: DBCommandToken that can be used to cancel the command before it executes.
 	*/
 	@discardableResult
-	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping (KeyResults) -> Void) -> DBCommandToken? {
+	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping @Sendable (KeyResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB_sync()
 		if case .failure = openResults {
 			completion(.failure(.cannotOpenFile))
@@ -395,7 +395,7 @@ public actor AgileDB {
 
 		guard let dataValue = value.data(using: .utf8) else { return false }
 
-		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject]
+		let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: any Sendable]
 		assert(objectValues != nil, "Value must be valid JSON string that is a dictionary for the top-level object")
 
 		return await setValueInTable(table, for: key, to: objectValues!, autoDeleteAfter: autoDeleteAfter)
@@ -412,7 +412,7 @@ public actor AgileDB {
 	- returns: Bool If the value was set successfully.
 	*/
 	@discardableResult
-	public func setValueInTable(_ table: DBTable, for key: String, to objectValues: [String: AnyObject], autoDeleteAfter: Date? = nil) async -> Bool {
+	public func setValueInTable(_ table: DBTable, for key: String, to objectValues: [String: any Sendable], autoDeleteAfter: Date? = nil) async -> Bool {
 		let now = AgileDB.stringValueForDate(Date())
 		let deleteDateTime = (autoDeleteAfter == nil ? "NULL" : "'" + AgileDB.stringValueForDate(autoDeleteAfter!) + "'")
 
@@ -450,7 +450,7 @@ public actor AgileDB {
 	  - parameter table: The table to return the value from.
 	  - parameter key: The key for the entry.
 
-	  - returns: [String: AnyObject]
+	  - returns: [String: any Sendable]
 	  - throws: DBError
 	  */
 	public func dictValueFromTable(_ table: DBTable, for key: String) async throws -> [String: any Sendable] {
@@ -686,18 +686,18 @@ public actor AgileDB {
 				let activity = row.values[4] as! String
 				let key = row.values[5] as! String?
 
-				var entryDict = [String: AnyObject]()
-				entryDict["timeStamp"] = timeStamp as AnyObject
+				var entryDict = [String: any Sendable]()
+				entryDict["timeStamp"] = timeStamp as any Sendable
 				if originalDB != dbInstanceKey {
-					entryDict["originalDB"] = originalDB as AnyObject
+					entryDict["originalDB"] = originalDB as any Sendable
 				}
-				entryDict["tableName"] = tableName as AnyObject
-				entryDict["activity"] = activity as AnyObject
+				entryDict["tableName"] = tableName as any Sendable
+				entryDict["activity"] = activity as any Sendable
 				if let key = key {
-					entryDict["key"] = key as AnyObject
+					entryDict["key"] = key as any Sendable
 					if activity == "U" {
 						guard let dictValue = await dictValueFromTable(DBTable(name: tableName), for: key, includeDates: true) else { continue }
-						entryDict["value"] = dictValue as AnyObject
+						entryDict["value"] = dictValue as any Sendable
 					}
 				}
 
@@ -747,9 +747,9 @@ public actor AgileDB {
 			if let fileText = try? String(contentsOfFile: filePath, encoding: String.Encoding.utf8) {
 				let dataValue = fileText.dataValue()
 
-				if let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: AnyObject] {
+				if let objectValues = (try? JSONSerialization.jsonObject(with: dataValue, options: .mutableContainers)) as? [String: any Sendable] {
 					let sourceDB = objectValues["sourceDB"] as! String
-					let logEntries = objectValues["logEntries"] as! [[String: AnyObject]]
+					let logEntries = objectValues["logEntries"] as! [[String: any Sendable]]
 					let lastSequence = objectValues["lastSequence"] as! Int
 					var index = 0
 					for entry in logEntries {
@@ -771,7 +771,7 @@ public actor AgileDB {
 							   let results = await sqlRows("select 1 from __synclog where tableName = '\(tableName)' and key = '\(key)' and timestamp > '\(timeStamp)'") {
 								if results.isEmpty {
 									if activity == "U" {
-										var objectValues = entry["value"] as! [String: AnyObject]
+										var objectValues = entry["value"] as! [String: any Sendable]
 										let addedDateTime = objectValues["addedDateTime"] as! String
 										let updatedDateTime = objectValues["updatedDateTime"] as! String
 										let deleteDateTime = (objectValues["deleteDateTime"] == nil ? "NULL" : objectValues["deleteDateTime"] as! String)
@@ -1162,7 +1162,7 @@ extension AgileDB {
 		return whereClause
 	}
 
-	private func setValue(table: DBTable, key: String, objectValues: [String: AnyObject], addedDateTime: String, updatedDateTime: String, deleteDateTime: String, sourceDB: String, originalDB: String) async -> Bool {
+	private func setValue(table: DBTable, key: String, objectValues: [String: any Sendable], addedDateTime: String, updatedDateTime: String, deleteDateTime: String, sourceDB: String, originalDB: String) async -> Bool {
 		let openResults = await openDB()
 		if case .failure = openResults {
 			return false
@@ -1175,7 +1175,7 @@ extension AgileDB {
 		var arrayKeys = [String]()
 		var arrayKeyTypes = [String]()
 		var arrayTypes = [ValueType]()
-		var arrayValues = [AnyObject]()
+		var arrayValues = [any Sendable]()
 
 		for (objectKey, objectValue) in objectValues {
 			let valueType = SQLiteCore.typeOfValue(objectValue)
@@ -1232,14 +1232,14 @@ extension AgileDB {
 		}
 
 		if !(await setTableValues(objectValues: objectValues, sql: sql)) {
-			await validateTableColumns(table: table, objectValues: objectValues as [String: AnyObject])
+			await validateTableColumns(table: table, objectValues: objectValues as [String: any Sendable])
 			if !(await setTableValues(objectValues: objectValues, sql: sql)) {
 				return false
 			}
 		}
 
 		for index in 0 ..< arrayKeys.count {
-			if !(await setArrayValues(table: table, arrayValues: arrayValues[index] as! [AnyObject], valueType: arrayTypes[index], key: key, objectKey: arrayKeys[index])) {
+			if !(await setArrayValues(table: table, arrayValues: arrayValues[index] as! [any Sendable], valueType: arrayTypes[index], key: key, objectKey: arrayKeys[index])) {
 				return false
 			}
 		}
@@ -1261,7 +1261,7 @@ extension AgileDB {
 		return true
 	}
 
-	private func setTableValues(objectValues: [String: AnyObject], sql: String) async -> Bool {
+	private func setTableValues(objectValues: [String: any Sendable], sql: String) async -> Bool {
 		await withCheckedContinuation { continuation in
 			dbCore.setTableValues(objectValues: objectValues, sql: sql) { success in
 				continuation.resume(returning: success)
@@ -1269,7 +1269,7 @@ extension AgileDB {
 		}
 	}
 
-	private func setArrayValues(table: DBTable, arrayValues: [AnyObject], valueType: ValueType, key: String, objectKey: String) async -> Bool {
+	private func setArrayValues(table: DBTable, arrayValues: [any Sendable], valueType: ValueType, key: String, objectKey: String) async -> Bool {
 		var successful = await sqlExecute("delete from \(table)_arrayValues where key='\(key)' and objectKey='\(objectKey)'")
 		if !successful { return false }
 
@@ -1339,7 +1339,7 @@ extension AgileDB {
 		}
 	}
 
-	private func dictValueFromTable(_ table: DBTable, for key: String, includeDates: Bool) async -> [String: AnyObject]? {
+	private func dictValueFromTable(_ table: DBTable, for key: String, includeDates: Bool) async -> [String: any Sendable]? {
 		assert(key != "", "key value must be provided")
 		let openResults = await openDB()
 		if case .failure = openResults { return nil }
@@ -1363,15 +1363,15 @@ extension AgileDB {
 		return await dictValueResults(table: table, key: key, results: results, columns: columns)
 	}
 
-	private func dictValueResults(table: DBTable, key: String, results: [DBRow]?, columns: [TableColumn]) async -> [String: AnyObject]? {
+	private func dictValueResults(table: DBTable, key: String, results: [DBRow]?, columns: [TableColumn]) async -> [String: any Sendable]? {
 		guard let results = results, results.isNotEmpty else { return nil }
 
-		var valueDict = [String: AnyObject]()
+		var valueDict = [String: any Sendable]()
 		for (columnIndex, column) in columns.enumerated() {
 			let valueIndex = columnIndex + 1
 			if results[0].values[valueIndex] != nil {
 				if column.type == .bool, let intValue = results[0].values[valueIndex] as? Int {
-					valueDict[column.name] = (intValue == 0 ? false : true) as AnyObject
+					valueDict[column.name] = (intValue == 0 ? false : true) as any Sendable
 				} else {
 					valueDict[column.name] = results[0].values[valueIndex]
 				}
@@ -1397,7 +1397,7 @@ extension AgileDB {
 				arrayQueryResults = await sqlRows("select intValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
 			case .doubleArray:
 				arrayQueryResults = await sqlRows("select doubleValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
-				valueDict[objectKey] = doubleArray as AnyObject
+				valueDict[objectKey] = doubleArray as any Sendable
 			default:
 				break
 			}
@@ -1419,11 +1419,11 @@ extension AgileDB {
 
 			switch valueType {
 			case .textArray:
-				valueDict[objectKey] = stringArray as AnyObject
+				valueDict[objectKey] = stringArray as any Sendable
 			case .intArray:
-				valueDict[objectKey] = intArray as AnyObject
+				valueDict[objectKey] = intArray as any Sendable
 			case .doubleArray:
-				valueDict[objectKey] = doubleArray as AnyObject
+				valueDict[objectKey] = doubleArray as any Sendable
 			default:
 				break
 			}
@@ -1504,7 +1504,7 @@ extension AgileDB {
 		return columns
 	}
 
-	private func validateTableColumns(table: DBTable, objectValues: [String: AnyObject]) async {
+	private func validateTableColumns(table: DBTable, objectValues: [String: any Sendable]) async {
 		let columns = await columnsInTable(table)
 		for (objectKey, value) in objectValues {
 			if objectKey == "key" { continue }
@@ -1606,7 +1606,7 @@ extension AgileDB {
 	  - returns: DBCommandToken that can be used to cancel the command before it executes.
 	  */
 	@discardableResult
-	public func sqlSelect(_ sql: String, queue: DispatchQueue? = nil, completion: @escaping (RowResults) -> Void) -> DBCommandToken? {
+	public func sqlSelect(_ sql: String, queue: DispatchQueue? = nil, completion: @escaping @Sendable (RowResults) -> Void) -> DBCommandToken? {
 		guard dbCore.isOpen else { return nil }
 
 		let blockReference: UInt = dbCore.sqlSelect(sql, completion: { rowResults in
@@ -1659,7 +1659,7 @@ private extension AgileDB {
 
 		private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-		class func typeOfValue(_ value: AnyObject) -> ValueType {
+		class func typeOfValue(_ value: any Sendable) -> ValueType {
 			let valueType: ValueType
 
 			switch value {
@@ -1811,11 +1811,11 @@ private extension AgileDB {
 							switch columnType {
 							case SQLITE_TEXT:
 								let value = String(cString: sqlite3_column_text(dbps, index))
-								row.values.append(value as AnyObject)
+								row.values.append(value as any Sendable)
 							case SQLITE_INTEGER:
-								row.values.append(Int(sqlite3_column_int64(dbps, index)) as AnyObject)
+								row.values.append(Int(sqlite3_column_int64(dbps, index)) as any Sendable)
 							case SQLITE_FLOAT:
-								row.values.append(Double(sqlite3_column_double(dbps, index)) as AnyObject)
+								row.values.append(Double(sqlite3_column_double(dbps, index)) as any Sendable)
 							default:
 								row.values.append(nil)
 							}
@@ -1871,7 +1871,7 @@ private extension AgileDB {
 
 		}
 
-		func setTableValues(objectValues: [String: AnyObject], sql: String, completion: @escaping (_ success: Bool) -> Void) {
+		func setTableValues(objectValues: [String: any Sendable], sql: String, completion: @escaping (_ success: Bool) -> Void) {
 			let block = { [unowned self] in
 				var dbps: OpaquePointer?
 				defer {
@@ -1894,9 +1894,9 @@ private extension AgileDB {
 						let valueType = SQLiteCore.typeOfValue(objectValue)
 						guard [.int, .double, .text, .bool].contains(valueType) else { continue }
 
-						let value: AnyObject
+						let value: any Sendable
 						if valueType == .bool, let boolValue = objectValue as? Bool {
-							value = (boolValue ? 1 : 0) as AnyObject
+							value = (boolValue ? 1 : 0) as any Sendable
 						} else {
 							value = objectValue
 						}
@@ -1926,7 +1926,7 @@ private extension AgileDB {
 			addBlock(block)
 		}
 
-		private func bindValue(_ statement: OpaquePointer, index: Int32, value: AnyObject) -> Int32 {
+		private func bindValue(_ statement: OpaquePointer, index: Int32, value: any Sendable) -> Int32 {
 			var status = SQLITE_OK
 			let valueType = SQLiteCore.typeOfValue(value)
 

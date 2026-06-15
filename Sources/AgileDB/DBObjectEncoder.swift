@@ -12,7 +12,7 @@ class DBObjectEncoder: Encoder {
 	let codingPath: [CodingKey] = []
 	let userInfo: [CodingUserInfoKey: Any] = [:]
 
-	typealias DBDict = [String: AnyObject]
+	typealias DBDict = [String: any Sendable]
 
 	var dbDict: DBDict = [:]
 
@@ -46,12 +46,12 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 	func encodeNil(forKey key: K) throws { }
 
 	func encode(_ value: Bool, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as AnyObject
+		encoder.dbDict[key.stringValue] = value as any Sendable
 	}
 
 	func encodeDate(_ date: Date, forKey key: K) throws {
 		let dateString = AgileDB.stringValueForDate(date)
-		encoder.dbDict[key.stringValue] = dateString as AnyObject
+		encoder.dbDict[key.stringValue] = dateString as any Sendable
 	}
 
 	func encodeDateArray(_ dateArray: [Date], forKey key: K) throws {
@@ -61,11 +61,11 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 			dateStrings.append(dateString)
 		}
 
-		encoder.dbDict[key.stringValue] = dateStrings as AnyObject
+		encoder.dbDict[key.stringValue] = dateStrings as any Sendable
 	}
 
 	func encodeDBObject(_ dbObject: DBObject, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = dbObject.key as AnyObject
+		encoder.dbDict[key.stringValue] = dbObject.key as any Sendable
 	}
 
 	func encodeDBObjectArray(_ dbObjects: [DBObject], forKey key: K) throws {
@@ -74,50 +74,50 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 			objectKeys.append(dbObject.key)
 		}
 
-		encoder.dbDict[key.stringValue] = objectKeys as AnyObject
+		encoder.dbDict[key.stringValue] = objectKeys as any Sendable
 	}
 
 	func encode(_ value: String, forKey key: K) throws {
 		if key.stringValue == "key" { return }
-		encoder.dbDict[key.stringValue] = value as AnyObject
+		encoder.dbDict[key.stringValue] = value as any Sendable
 	}
 
 	func encodeStringArray(_ value: [String], forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as AnyObject
+		encoder.dbDict[key.stringValue] = value as any Sendable
 	}
 
 	func encodeIntArray(_ value: [Int], forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as AnyObject
+		encoder.dbDict[key.stringValue] = value as any Sendable
 	}
 
 	func encodeDoubleArray(_ value: [Double], forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as AnyObject
+		encoder.dbDict[key.stringValue] = value as any Sendable
 	}
 
 	func encode(_ value: Double, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as AnyObject
+		encoder.dbDict[key.stringValue] = value as any Sendable
 	}
 
 	func encode(_ value: Float, forKey key: K) throws { }
 
 	func encode(_ value: Int, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as AnyObject
+		encoder.dbDict[key.stringValue] = value as any Sendable
 	}
 
 	func encode(_ value: Int8, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = Int(value) as AnyObject
+		encoder.dbDict[key.stringValue] = Int(value) as any Sendable
 	}
 
 	func encode(_ value: Int16, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = Int(value) as AnyObject
+		encoder.dbDict[key.stringValue] = Int(value) as any Sendable
 	}
 
 	func encode(_ value: Int32, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = Int(value) as AnyObject
+		encoder.dbDict[key.stringValue] = Int(value) as any Sendable
 	}
 
 	func encode(_ value: Data, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as AnyObject
+		encoder.dbDict[key.stringValue] = value as any Sendable
 	}
 
 	func encode(_ value: Int64, forKey key: K) throws { }

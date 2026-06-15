@@ -200,7 +200,7 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	}
 
 	func decodeArray(_ type: [Int].Type, forKey key: K) throws -> [Int] {
-		guard let values = dict[key.stringValue] as? [AnyObject] else {
+		guard let values = dict[key.stringValue] as? [any Sendable] else {
 			throw DictDecoderError.missingValueForKey(key.stringValue)
 		}
 
@@ -241,7 +241,7 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	}
 
 	func decodeArray(_ type: [Double].Type, forKey key: K) throws -> [Double] {
-		guard let values = dict[key.stringValue] as? [AnyObject] else {
+		guard let values = dict[key.stringValue] as? [any Sendable] else {
 			throw DictDecoderError.missingValueForKey(key.stringValue)
 		}
 

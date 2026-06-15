@@ -29,7 +29,9 @@ extension DBObject {
 	- parameter key: Key of the data entry.
 	*/
 	public init?(db: AgileDB, key: String) async {
-		guard let dictionaryValue = try? await db.dictValueFromTable(Self.table, for: key) as [String: AnyObject],
+		let dict = try? await db.dictValueFromTable(Self.table, for: key) as [String: any Sendable]
+
+		guard let dictionaryValue = try? await db.dictValueFromTable(Self.table, for: key) as [String: any Sendable],
 		      let dbObject: Self = await Self.dbObjectWithDict(dictionaryValue, db: db, for: key)
 		else { return nil }
 
@@ -111,7 +113,7 @@ extension DBObject {
 	*/
 	@available(*, deprecated, message: "Use await load instead")
 	@discardableResult
-	public static func loadObjectFromDB(_ db: AgileDB, for key: String, queue: DispatchQueue? = nil, completion: @escaping (Self) -> Void) -> DBCommandToken? {
+	public static func loadObjectFromDB(_ db: AgileDB, for key: String, queue: DispatchQueue? = nil, completion: @escaping @Sendable (Self) -> Void) -> DBCommandToken? {
 		Task {
 			if let dictionaryValue = try? await db.dictValueFromTable(table, for: key),
 			   let dbObject = await dbObjectWithDict(dictionaryValue, db: db, for: key) {
@@ -123,7 +125,7 @@ extension DBObject {
 
 	private static func dbObjectWithDict(_ dictionaryValue: [String: any Sendable], db: AgileDB, for key: String) async -> Self? {
 		var dictionaryValue = dictionaryValue
-		dictionaryValue["key"] = key as AnyObject
+		dictionaryValue["key"] = key as any Sendable
 
 		// Nested DBObjects are stored only by key. Decoding is synchronous but loading a
 		// nested object requires `await`, so decode in a loop: each pass that encounters
@@ -143,7 +145,7 @@ extension DBObject {
 				for miss in misses {
 					let cacheKey = DBObjectDecoderState.cacheKey(table: miss.table, key: miss.key)
 					if state.cache[cacheKey] != nil { continue }
-					guard let nestedDict = try? await db.dictValueFromTable(miss.table, for: miss.key) as [String: AnyObject] else {
+					guard let nestedDict = try? await db.dictValueFromTable(miss.table, for: miss.key) as [String: any Sendable] else {
 						return nil
 					}
 					state.cache[cacheKey] = nestedDict
@@ -175,7 +177,7 @@ extension DBObject {
 	/**
 	Dictionary value of object for use in setting value in database. Nested DBObjects are not encoded into the dictionary, only the key is referenced.
 	*/
-	public var dictValue: [String: AnyObject]? {
+	public var dictValue: [String: any Sendable]? {
 		let dictEncoder = DBObjectEncoder()
 
 		do {

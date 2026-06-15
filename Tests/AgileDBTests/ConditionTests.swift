@@ -19,12 +19,12 @@ struct ConditionTests {
 		let table: DBTable = "table51"
 		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1}", autoDeleteAfter: nil)
 
-		let accountCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .equal, value: "ACCT1" as AnyObject)
+		let accountCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .equal, value: "ACCT1" as any Sendable)
 		await #expect(throws: DBError.self) {
 			try await db.keysInTable(table, sortOrder: nil, conditions: [accountCondition])
 		}
 
-		let keyCondition = DBCondition(set: 0, objectKey: "key", conditionOperator: .equal, value: "ACCT1" as AnyObject)
+		let keyCondition = DBCondition(set: 0, objectKey: "key", conditionOperator: .equal, value: "ACCT1" as any Sendable)
 
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [keyCondition]))
 		#expect(keys.count == 0, "Keys shouldn't exist")
@@ -43,8 +43,8 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":4,\"account\":\"ACCT2\",\"dateValue\":\"2014-11-19T18:23:42.434-05:00\",\"arrayValue\":[16,17,18,19,20]}", autoDeleteAfter: nil)
 		await db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":5,\"account\":\"ACCT3\",\"dateValue\":\"2014-12-19T18:23:42.434-05:00\",\"arrayValue\":[21,22,23,24,25]}", autoDeleteAfter: nil)
 
-		let accountCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .equal, value: "ACCT's 1" as AnyObject)
-		let numCondition = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .greaterThan, value: 1 as AnyObject)
+		let accountCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .equal, value: "ACCT's 1" as any Sendable)
+		let numCondition = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .greaterThan, value: 1 as any Sendable)
 
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [accountCondition, numCondition]))
 		#expect(keys.count == 1 && keys[0] == "testKey2", "invalid key")
@@ -65,8 +65,8 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":4,\"account\":\"TEST3\",\"dateValue\":\"2014-11-19T18:23:42.434-05:00\",\"arrayValue\":[16,17,18,19,20]}", autoDeleteAfter: nil)
 		await db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":5,\"account\":\"ACCT3\",\"dateValue\":\"2014-12-19T18:23:42.434-05:00\",\"arrayValue\":[21,22,23,24,25]}", autoDeleteAfter: nil)
 
-		let acctCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .contains, value: "ACCT" as AnyObject)
-		let arrayCondition = DBCondition(set: 1, objectKey: "arrayValue", conditionOperator: .contains, value: 10 as AnyObject)
+		let acctCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .contains, value: "ACCT" as any Sendable)
+		let arrayCondition = DBCondition(set: 1, objectKey: "arrayValue", conditionOperator: .contains, value: 10 as any Sendable)
 
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [acctCondition, arrayCondition]))
 		let success = keys.count == 3 && (keys.filter({ $0 == "testKey1" }).count == 1 && keys.filter({ $0 == "testKey5" }).count == 1 && keys.filter({ $0 == "testKey2" }).count == 1)
@@ -113,11 +113,11 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: key, to: json)
 
 		var conditions: [DBCondition] = []
-		conditions.append(DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "Checking" as AnyObject))
-		conditions.append(DBCondition(set: 0, objectKey: "locationKey", conditionOperator: .equal, value: "Kroger" as AnyObject))
+		conditions.append(DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "Checking" as any Sendable))
+		conditions.append(DBCondition(set: 0, objectKey: "locationKey", conditionOperator: .equal, value: "Kroger" as any Sendable))
 
-		conditions.append(DBCondition(set: 1, objectKey: "accountKey", conditionOperator: .equal, value: "Checking" as AnyObject))
-		conditions.append(DBCondition(set: 1, objectKey: "note", conditionOperator: .equal, value: "Kroger" as AnyObject))
+		conditions.append(DBCondition(set: 1, objectKey: "accountKey", conditionOperator: .equal, value: "Checking" as any Sendable))
+		conditions.append(DBCondition(set: 1, objectKey: "note", conditionOperator: .equal, value: "Kroger" as any Sendable))
 
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: conditions, validateObjects: true))
 		#expect(keys.count == 1)
@@ -134,7 +134,7 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: "testKey2", to: "{\"account\":\"ACCT2\"}", autoDeleteAfter: nil)
 		await db.setValueInTable(table, for: "testKey3", to: "{\"account\":\"ACCT3\"}", autoDeleteAfter: nil)
 
-		let condition = DBCondition(set: 0, objectKey: "account", conditionOperator: .inList, value: ["ACCT1", "ACCT3"] as AnyObject)
+		let condition = DBCondition(set: 0, objectKey: "account", conditionOperator: .inList, value: ["ACCT1", "ACCT3"] as any Sendable)
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
 
 		#expect(keys.count == 2)
@@ -153,7 +153,7 @@ struct ConditionTests {
 			await db.setValueInTable(table, for: "testKey\(value)", to: "{\"numValue\":\(value)}", autoDeleteAfter: nil)
 		}
 
-		let condition = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .inList, value: [1, 3, 5] as AnyObject)
+		let condition = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .inList, value: [1, 3, 5] as any Sendable)
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
 
 		#expect(keys.count == 3)
@@ -173,7 +173,7 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: "testKey2", to: "{\"cost\":2.5}", autoDeleteAfter: nil)
 		await db.setValueInTable(table, for: "testKey3", to: "{\"cost\":3.5}", autoDeleteAfter: nil)
 
-		let condition = DBCondition(set: 0, objectKey: "cost", conditionOperator: .inList, value: [1.5, 3.5] as AnyObject)
+		let condition = DBCondition(set: 0, objectKey: "cost", conditionOperator: .inList, value: [1.5, 3.5] as any Sendable)
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
 
 		#expect(keys.count == 2)
@@ -192,7 +192,7 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":2,\"tags\":[\"green\",\"yellow\"]}", autoDeleteAfter: nil)
 		await db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":3,\"tags\":[\"black\",\"white\"]}", autoDeleteAfter: nil)
 
-		let condition = DBCondition(set: 0, objectKey: "tags", conditionOperator: .contains, value: "green" as AnyObject)
+		let condition = DBCondition(set: 0, objectKey: "tags", conditionOperator: .contains, value: "green" as any Sendable)
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
 
 		#expect(keys.count == 2)
@@ -211,7 +211,7 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":2,\"prices\":[2.5,4.5]}", autoDeleteAfter: nil)
 		await db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":3,\"prices\":[5.5,6.5]}", autoDeleteAfter: nil)
 
-		let condition = DBCondition(set: 0, objectKey: "prices", conditionOperator: .contains, value: 2.5 as AnyObject)
+		let condition = DBCondition(set: 0, objectKey: "prices", conditionOperator: .contains, value: 2.5 as any Sendable)
 		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
 
 		#expect(keys.count == 2)
@@ -233,12 +233,12 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: "testKey1", to: "{\"dateValue\":\"\(AgileDB.stringValueForDate(earlyDate))\"}", autoDeleteAfter: nil)
 		await db.setValueInTable(table, for: "testKey2", to: "{\"dateValue\":\"\(AgileDB.stringValueForDate(lateDate))\"}", autoDeleteAfter: nil)
 
-		let lessThanCondition = DBCondition(set: 0, objectKey: "dateValue", conditionOperator: .lessThan, value: middleDate as AnyObject)
+		let lessThanCondition = DBCondition(set: 0, objectKey: "dateValue", conditionOperator: .lessThan, value: middleDate as any Sendable)
 		let earlierKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [lessThanCondition]))
 		#expect(earlierKeys.count == 1)
 		#expect(earlierKeys.contains("testKey1"))
 
-		let greaterThanCondition = DBCondition(set: 0, objectKey: "dateValue", conditionOperator: .greaterThan, value: middleDate as AnyObject)
+		let greaterThanCondition = DBCondition(set: 0, objectKey: "dateValue", conditionOperator: .greaterThan, value: middleDate as any Sendable)
 		let laterKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [greaterThanCondition]))
 		#expect(laterKeys.count == 1)
 		#expect(laterKeys.contains("testKey2"))
@@ -255,13 +255,13 @@ struct ConditionTests {
 		await db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":2,\"flag\":false}", autoDeleteAfter: nil)
 		await db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":3,\"flag\":true}", autoDeleteAfter: nil)
 
-		let trueCondition = DBCondition(set: 0, objectKey: "flag", conditionOperator: .equal, value: true as AnyObject)
+		let trueCondition = DBCondition(set: 0, objectKey: "flag", conditionOperator: .equal, value: true as any Sendable)
 		let trueKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [trueCondition]))
 		#expect(trueKeys.count == 2)
 		#expect(trueKeys.contains("testKey1"))
 		#expect(trueKeys.contains("testKey3"))
 
-		let falseCondition = DBCondition(set: 0, objectKey: "flag", conditionOperator: .equal, value: false as AnyObject)
+		let falseCondition = DBCondition(set: 0, objectKey: "flag", conditionOperator: .equal, value: false as any Sendable)
 		let falseKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [falseCondition]))
 		#expect(falseKeys.count == 1)
 		#expect(falseKeys.contains("testKey2"))
@@ -278,22 +278,22 @@ struct ConditionTests {
 			await db.setValueInTable(table, for: "testKey\(value)", to: "{\"numValue\":\(value)}", autoDeleteAfter: nil)
 		}
 
-		let notEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .notEqual, value: 3 as AnyObject)
+		let notEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .notEqual, value: 3 as any Sendable)
 		let notEqualKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [notEqual]))
 		#expect(notEqualKeys.count == 4)
 		#expect(!notEqualKeys.contains("testKey3"))
 
-		let lessThan = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .lessThan, value: 3 as AnyObject)
+		let lessThan = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .lessThan, value: 3 as any Sendable)
 		let lessThanKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [lessThan]))
 		#expect(lessThanKeys.count == 2)
 		#expect(lessThanKeys.contains("testKey1"))
 		#expect(lessThanKeys.contains("testKey2"))
 
-		let lessThanOrEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .lessThanOrEqual, value: 3 as AnyObject)
+		let lessThanOrEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .lessThanOrEqual, value: 3 as any Sendable)
 		let lessThanOrEqualKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [lessThanOrEqual]))
 		#expect(lessThanOrEqualKeys.count == 3)
 
-		let greaterThanOrEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .greaterThanOrEqual, value: 4 as AnyObject)
+		let greaterThanOrEqual = DBCondition(set: 0, objectKey: "numValue", conditionOperator: .greaterThanOrEqual, value: 4 as any Sendable)
 		let greaterThanOrEqualKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [greaterThanOrEqual]))
 		#expect(greaterThanOrEqualKeys.count == 2)
 		#expect(greaterThanOrEqualKeys.contains("testKey4"))

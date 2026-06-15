@@ -12,7 +12,7 @@ public typealias BoolResults = Result<Bool, DBError>
 public typealias KeyResults = Result<[String], DBError>
 public typealias RowResults = Result<[DBRow], DBError>
 public typealias JsonResults = Result<String, DBError>
-public typealias DictResults = Result<[String: AnyObject], DBError>
+public typealias DictResults = Result<[String: any Sendable], DBError>
 
 /**
 DBTable is used to identify the table data is stored in
@@ -78,9 +78,9 @@ public struct DBCondition: @unchecked Sendable {
 	public var set = 0
 	public var objectKey = ""
 	public var conditionOperator = DBConditionOperator.equal
-	public var value: AnyObject
+	public var value: any Sendable
 
-	public init(set: Int, objectKey: String, conditionOperator: DBConditionOperator, value: AnyObject) {
+	public init(set: Int, objectKey: String, conditionOperator: DBConditionOperator, value: any Sendable) {
 		self.set = set
 		self.objectKey = objectKey
 		self.conditionOperator = conditionOperator
@@ -89,10 +89,10 @@ public struct DBCondition: @unchecked Sendable {
 }
 
 public struct DBRow: @unchecked Sendable {
-	public var values = [AnyObject?]()
+	public var values = [(any Sendable)?]()
 }
 
-public enum DBError: Error, Equatable {
+public enum DBError: Error, Equatable, Sendable {
 	case cannotWriteToFile
 	case diskError
 	case damagedFile

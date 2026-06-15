@@ -22,7 +22,7 @@ struct BasicTests {
 		// Each key stores a stable value of {"val": key}, so a read is correct
 		// whether it observes the seed or a concurrent re-write.
 		for key in keys {
-			_ = await db.setValueInTable(table, for: key, to: ["val": key as AnyObject])
+			_ = await db.setValueInTable(table, for: key, to: ["val": key as any Sendable])
 		}
 
 		// Hammer the DB with interleaved writes and reads in a single task group
@@ -32,7 +32,7 @@ struct BasicTests {
 			for key in keys {
 				// Concurrent re-write of the key (value is unchanged).
 				group.addTask {
-					_ = await db.setValueInTable(table, for: key, to: ["val": key as AnyObject])
+					_ = await db.setValueInTable(table, for: key, to: ["val": key as any Sendable])
 					return nil
 				}
 				// Concurrent read of the key.
