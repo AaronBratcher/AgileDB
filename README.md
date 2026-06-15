@@ -2,13 +2,12 @@
 
 - A SQLite database wrapper written in Swift that requires no SQL knowledge to use.
 - No need to keep track of columns used in the database; it's automatic.
-- Completely thread safe since it uses its own Thread subclass.
-- Works with Async/Await
-- Use the publish method to work with Combine and SwiftUI
+- Completely thread safe. AgileDB is implemented as a Swift `actor` and is fully Swift 6 concurrency compliant.
+- Built around Async/Await
+- Use the publisher method to work with Combine and SwiftUI
 
 ## Installation Options ##
 - Swift Package Manager (Recommended)
-- Cocoapods `pod AgileDB`
 - Include all .swift source files in your project
 
 ## Getting Started ##
@@ -22,11 +21,13 @@
 
 ### Protocol Definition ###
 ```swift
-public protocol DBObject: Codable {
+public protocol DBObject: Codable, Sendable {
     static var table: DBTable { get }
     var key: String { get set }
+    var codingKeys: [CodingKey] { get }
 }
 ```
+- `codingKeys` has a default implementation that returns an empty array, encoding all of the object's properties. Provide your own implementation to limit which properties are encoded.
 
 ### Protocol methods ###
 ```swift
@@ -43,11 +44,12 @@ public init?(db: AgileDB, key: String) async
 
  - parameter db: Database object to hold the data.
  - parameter expiration: Optional Date specifying when the data is to be automatically deleted. Default value is nil specifying no automatic deletion.
+ - parameter saveNestedObjects: Save nested DBObjects and arrays of DBObjects. Default value is true.
 
  - returns: Discardable Bool value of a successful save.
 */
 @discardableResult
-public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil) async -> Bool
+public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil, saveNestedObjects: Bool = true) async -> Bool
 
 /**
  Remove the object from the database
@@ -73,7 +75,7 @@ public static func load(from db: AgileDB, for key: String) async throws -> Self
 ```swift
 import AgileDB
 
-enum Table: String {
+enum Table {
     static let categories: DBTable = "Categories"
     static let accounts: DBTable = "Accounts"
     static let people: DBTable = "People"
@@ -88,16 +90,16 @@ struct Category: DBObject {
 }
 
 // save to database
-category.save(to: db)
+await category.save(to: db)
 
 // save to database, automatically delete after designated date
-category.save(to: db, autoDeleteAfter: deletionDate)
+await category.save(to: db, autoDeleteAfter: deletionDate)
 
 // instantiate and pull from DB asynchronously
 guard let category = await Category(db: db, key: categoryKey) else { return }
 
 // delete from DB
-category.delete(from: db)
+await category.delete(from: db)
 
 ```
 
@@ -105,20 +107,17 @@ category.delete(from: db)
 - Works with DBObject elements
 - Instantiate the class with a reference to the database and the keys
 - Only keys are stored to minimize memory usage
+- Objects are loaded asynchronously on demand with the `object(at:)` method
 - The database publisher returns an instance of this class
 
 ### Usage ###
 ```swift
-guard let keys = db.keysInTable(Category.table) else { return }
+let keys = try await db.keysInTable(Category.table)
 
 let categories = DBResults<Category>(db: db, keys: keys)
-    
-for category in categories {
-    // use category object
-}
-    
+
 for index in 0..<categories.count {
-    let category = categories[index]
+    guard let category = await categories.object(at: index) else { continue }
     // use category object
 }
 ```
@@ -153,14 +152,14 @@ let _ = publisher.sink(receiveCompletion: { _ in }) { ( results) in
 See if a given table holds a given key.
 ```swift
 let table: DBTable = "categories"
-if let hasKey = AgileDB.shared.tableHasKey(table:table, key:"category1") {
-    // process here
+do {
+    let hasKey = try await AgileDB.shared.tableHasKey(table: table, key: "category1")
     if hasKey {
         // table has key
     } else {
         // table didn't have key
     }
-} else {
+} catch {
     // handle error
 }
 ```
@@ -168,14 +167,14 @@ if let hasKey = AgileDB.shared.tableHasKey(table:table, key:"category1") {
 See if a given table holds all given keys.
 ```swift
 let table: DBTable = "categories"
-if let hasKeys = AgileDB.shared.tableHasAllKeys(table:table, keys:["category1","category2","category3"]) {
-    // process here
+do {
+    let hasKeys = try await AgileDB.shared.tableHasAllKeys(table: table, keys: ["category1","category2","category3"])
     if hasKeys {
         // table has all keys
     } else {
-        // table didn't have key
+        // table didn't have all keys
     }
-} else {
+} catch {
     // handle error
 }
 ```
@@ -183,9 +182,10 @@ if let hasKeys = AgileDB.shared.tableHasAllKeys(table:table, keys:["category1","
 Return an array of keys in a given table. Optionally specify sort order based on a value at the root level
 ```swift
 let table: DBTable = "categories"
-if let tableKeys = AgileDB.shared.keysInTable(table, sortOrder:"name, date desc") }
+do {
+    let tableKeys = try await AgileDB.shared.keysInTable(table, sortOrder: "name, date desc")
     // process keys
-} else {
+} catch {
     // handle error
 }
 ```
@@ -198,9 +198,10 @@ All conditions in the same set are ANDed together. Separate sets are ORed agains
 Unsorted Example:
 
 let accountCondition = DBCondition(set:0,objectKey:"account",conditionOperator:.equal, value:"ACCT1")
-if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCondition) {
+do {
+	let keys = try await AgileDB.shared.keysInTable("table1", sortOrder: nil, conditions: [accountCondition])
 	// use keys
-} else {
+} catch {
 	// handle error
 }
 
@@ -209,17 +210,19 @@ if let keys = AgileDB.keysInTable("table1", sortOrder:nil, conditions:accountCon
 - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
 - parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
 
-- returns: [String]? Returns an array of keys from the table. Is nil when database could not be opened or other error occured.
+- returns: [String] Returns an array of keys from the table.
+- throws: DBError when the database could not be opened or another error occurred.
 
-public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> [String]?
+public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> [String]
 */
 
 
 let table: DBTable = "accounts"
 let accountCondition = DBCondition(set:0,objectKey:"account", conditionOperator:.equal, value:"ACCT1")
-if let keys = AgileDB.shared.keysInTable(table, sortOrder: nil, conditions: [accountCondition]) {
+do {
+    let keys = try await AgileDB.shared.keysInTable(table, sortOrder: nil, conditions: [accountCondition])
     // process keys
-} else {
+} catch {
     // handle error
 }
 ```
@@ -243,7 +246,7 @@ let dict = [
 let data = try! JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted)
 let json = String(data: data, encoding: .utf8)!
 // the key object in the json value is ignored in the setValue method
-if AgileDB.shared.setValueInTable(table, for: key, to: json)
+if await AgileDB.shared.setValueInTable(table, for: key, to: json) {
     // success
 } else {
     // handle error
@@ -253,15 +256,17 @@ if AgileDB.shared.setValueInTable(table, for: key, to: json)
 Retrieve value for a given key
 ```swift
 let table: DBTable = "categories"
-if let jsonValue = AgileDB.shared.valueFromTable(table, for:"category1") {
+do {
+    let jsonValue = try await AgileDB.shared.valueFromTable(table, for: "category1")
     // process value
-} else {
+} catch {
     // handle error
 }
 
-if let dictValue = AgileDB.shared.dictValueFromTable(table, for:"category1") {
+do {
+    let dictValue = try await AgileDB.shared.dictValueFromTable(table, for: "category1")
     // process dictionary value
-} else {
+} catch {
     // handle error
 }
 ```
@@ -269,7 +274,7 @@ if let dictValue = AgileDB.shared.dictValueFromTable(table, for:"category1") {
 Delete the value for a given key
 ```swift
 let table: DBTable = "categories"
-if AgileDB.shared.deleteFromTable(table, for:"category1") {
+if await AgileDB.shared.deleteFromTable(table, for: "category1") {
     // value was deleted
 } else {
     // handle error
@@ -277,7 +282,7 @@ if AgileDB.shared.deleteFromTable(table, for:"category1") {
 ```
 
 ## Retrieving Data Asynchronously ##
-With version 6.3, AgileDB allows data to be retrieved asynchronously using `await`.
+AgileDB is an `actor`, so data is retrieved asynchronously using `await`. Methods that can fail are marked `throws`.
 
 ```swift
 let db = AgileDB.shared
@@ -305,9 +310,10 @@ AgileDB allows you to do standard SQL selects for more complex queries. Because 
 ```
 let db = AgileDB.shared
 let sql = "select name from accounts a inner join categories c on c.accountKey = a.key order by a.name"
-if let results = db.sqlSelect(sql) {
+do {
+    let results = try await db.sqlSelect(sql)
     // process results
-} else {
+} catch {
     // handle error
 }
 ```
@@ -321,7 +327,7 @@ Enables syncing. Once enabled, a log is created for all current values in the ta
 
 - returns: Bool If syncing was successfully enabled.
 */
-public func enableSyncing() -> Bool
+public func enableSyncing() async -> Bool
 
 
 /**
@@ -329,13 +335,13 @@ Disables syncing.
 
 - returns: Bool If syncing was successfully disabled.
 */
-public func disableSyncing() -> Bool
+public func disableSyncing() async -> Bool
     
 
 /**
 Read-only array of unsynced tables. Any tables not in this array will be synced.
 */
-var unsyncedTables: [String]
+private(set) public var unsyncedTables: [DBTable]
 
 /**
 Sets the tables that are not to be synced.
@@ -344,7 +350,7 @@ Sets the tables that are not to be synced.
 
 - returns: Bool If list was set successfully.
 */
-public func setUnsyncedTables(_ tables: [String]) -> Bool
+public func setUnsyncedTables(_ tables: [DBTable]) async -> Bool
 
 
 /**
@@ -356,7 +362,7 @@ Creates a sync file that can be used on another AgileDB instance to sync data. T
 
 - returns: (Bool,Int) If the file was successfully created and the lastSequence that should be used in subsequent calls to this instance for the given targetDBInstanceKey.
 */
-public func createSyncFileAtURL(_ localURL: URL!, lastSequence: Int, targetDBInstanceKey: String) -> (Bool, Int)
+public func createSyncFileAtURL(_ localURL: URL!, lastSequence: Int, targetDBInstanceKey: String) async -> (Bool, Int)
 
 
 /**
@@ -368,10 +374,21 @@ Processes a sync file created by another instance of AgileDB This is a synchrono
 - returns: (Bool,String,Int)  If the sync file was successfully processed,the instanceKey of the submiting DB, and the lastSequence that should be used in subsequent calls to the createSyncFile method of the instance that was used to create this file. If the database couldn't be opened or syncing hasn't been enabled, then the instanceKey will be empty and the lastSequence will be equal to zero.
 */
 public typealias syncProgressUpdate = (_ percentComplete: Double) -> Void
-public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpdate?) -> (Bool, String, Int)
+public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpdate?) async -> (Bool, String, Int)
 ```    
     
 # Revision History
+### 7.0 ###
+- AgileDB is now implemented as a Swift `actor` and is fully Swift 6 language-mode compliant.
+- Asynchronous (async/await) methods are now the primary API. Most low-level methods are `async`, and those that can fail are `async throws`.
+- Dictionary values now use `any Sendable` rather than `AnyObject`.
+- DBObject now conforms to `Sendable` and exposes a `codingKeys` property (defaults to encoding all properties).
+- DBObject `save` gained a `saveNestedObjects` parameter (default true).
+- DBResults loads objects on demand with the asynchronous `object(at:)` method; subscripting returns nil.
+- `unsyncedTables` and `setUnsyncedTables(_:)` now use `[DBTable]`.
+- CocoaPods support removed; install via Swift Package Manager.
+- Minimum platforms raised (iOS 18, macOS 12, tvOS 18, watchOS 9); built with the Swift 6.2 toolchain.
+
 ### 6.5 ###
 - All DBObject methods have async/await counterparts
 - Developed and tested with Xcode 14.2

@@ -29,8 +29,6 @@ extension DBObject {
 	- parameter key: Key of the data entry.
 	*/
 	public init?(db: AgileDB, key: String) async {
-		let dict = try? await db.dictValueFromTable(Self.table, for: key) as [String: any Sendable]
-
 		guard let dictionaryValue = try? await db.dictValueFromTable(Self.table, for: key) as [String: any Sendable],
 		      let dbObject: Self = await Self.dbObjectWithDict(dictionaryValue, db: db, for: key)
 		else { return nil }
