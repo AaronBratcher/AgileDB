@@ -24,19 +24,43 @@ public class DBResults<T: DBObject>: Identifiable {
 		self.keys = keys
 	}
 
-	/// Asynchronously loads the object at the given index.
+	/// Asynchronously loads the object at the given index. Returns nil if the index is out
+	/// of bounds or the object can no longer be loaded from the database.
 	public func object(at index: CustomClassIndex) async -> T? {
 		guard index >= 0 && index < keys.count else { return nil }
 		return await T(db: db, key: keys[index])
 	}
 }
 
-extension DBResults: RandomAccessCollection {
-	public var startIndex: CustomClassIndex { return keys.startIndex }
-	public var endIndex: CustomClassIndex { return keys.endIndex }
+extension DBResults: AsyncSequence {
+	public typealias Element = T
 
-	/// Returns nil — use `object(at:) async` to load objects asynchronously.
-	public subscript(index: CustomClassIndex) -> CustomClassValue? {
-		return nil
+	/// Loads each object on demand. Only keys are stored, so loading is asynchronous —
+	/// iterate with `for await object in results`.
+	public struct AsyncIterator: AsyncIteratorProtocol {
+		private let results: DBResults
+		private var index = 0
+
+		init(results: DBResults) {
+			self.results = results
+		}
+
+		public mutating func next() async -> T? {
+			// Keys that can no longer be loaded are skipped; `nil` is returned only
+			// once every key has been visited, signalling the end of the sequence.
+			while index < results.keys.count {
+				let current = index
+				index += 1
+				if let object = await results.object(at: current) {
+					return object
+				}
+			}
+
+			return nil
+		}
+	}
+
+	public func makeAsyncIterator() -> AsyncIterator {
+		AsyncIterator(results: self)
 	}
 }

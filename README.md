@@ -107,7 +107,7 @@ await category.delete(from: db)
 - Works with DBObject elements
 - Instantiate the class with a reference to the database and the keys
 - Only keys are stored to minimize memory usage
-- Objects are loaded asynchronously on demand with the `object(at:)` method
+- Objects are loaded asynchronously on demand, either with the `object(at:)` method or by iterating the results as an `AsyncSequence` with `for await`
 - The database publisher returns an instance of this class
 
 ### Usage ###
@@ -116,10 +116,13 @@ let keys = try await db.keysInTable(Category.table)
 
 let categories = DBResults<Category>(db: db, keys: keys)
 
-for index in 0..<categories.count {
-    guard let category = await categories.object(at: index) else { continue }
+// Iterate as an AsyncSequence (objects load on demand):
+for await category in categories {
     // use category object
 }
+
+// Or load a specific object by index:
+guard let first = await categories.object(at: 0) else { return }
 ```
 
 ## Publisher ##
@@ -384,7 +387,7 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 - Dictionary values now use `any Sendable` rather than `AnyObject`.
 - DBObject now conforms to `Sendable` and exposes a `codingKeys` property (defaults to encoding all properties).
 - DBObject `save` gained a `saveNestedObjects` parameter (default true).
-- DBResults loads objects on demand with the asynchronous `object(at:)` method; subscripting returns nil.
+- DBResults loads objects on demand and conforms to `AsyncSequence`; iterate it with `for await` or load a single object with the asynchronous `object(at:)` method.
 - `unsyncedTables` and `setUnsyncedTables(_:)` now use `[DBTable]`.
 - CocoaPods support removed; install via Swift Package Manager.
 - Minimum platforms raised (iOS 18, macOS 12, tvOS 18, watchOS 9); built with the Swift 6.2 toolchain.
