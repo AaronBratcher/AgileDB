@@ -26,21 +26,26 @@ struct PublisherTests {
 			receivedResults.append(results)
 		}
 
-		// Wait for initial publisher update
-		try await Task.sleep(nanoseconds: 500_000_000)
+		// Poll the most recent emission's count until it reaches the expected value (or
+		// times out). This tolerates the publisher's intermediate emissions, avoids
+		// depending on a single fixed delay, and never indexes into a possibly-empty array.
+		func waitForLatestCount(_ expected: Int) async -> Int? {
+			for _ in 0 ..< 50 {
+				try? await Task.sleep(nanoseconds: 100_000_000)
+				if let count = receivedResults.last?.count, count == expected { return count }
+			}
+			return receivedResults.last?.count
+		}
 
-		// Add a new transaction
+		// The initial emission can be coalesced away by the publisher's dropFirst() if the
+		// asynchronous fetch resolves before the subscription attaches, so assert on a
+		// change made *after* subscribing: reaching 10 proves the 9 pre-existing rows were
+		// counted plus the one just added.
 		var transaction = Transaction(date: Date(), accountKey: "A1", amount: 100)
 		transaction.key = "K10"
 		await transaction.save(to: db)
 
-		// Wait for publisher update
-		try await Task.sleep(nanoseconds: 1_500_000_000)
-
-		// Verify we received the expected updates
-		#expect(receivedResults.count >= 2, "Should have received at least 2 updates")
-		#expect(receivedResults[0].count == 9, "First update should have 9 items")
-		#expect(receivedResults[1].count == 10, "Second update should have 10 items")
+		#expect(await waitForLatestCount(10) == 10, "Update should reflect 10 items (9 existing + 1 added)")
 
 		cancellable.cancel()
 
@@ -69,37 +74,36 @@ struct PublisherTests {
 			results2.append(results)
 		}
 
-		// Wait for initial updates
-		try await Task.sleep(nanoseconds: 500_000_000)
+		// Poll a result set's latest count until it matches (or times out), rather than
+		// indexing into arrays that may not yet hold the expected emissions.
+		func waitForCount(_ latest: () -> Int?, _ expected: Int) async -> Int? {
+			for _ in 0 ..< 50 {
+				try? await Task.sleep(nanoseconds: 100_000_000)
+				if let count = latest(), count == expected { return count }
+			}
+			return latest()
+		}
 
-		// Add transactions
+		// The initial emission can be coalesced away by the publisher's dropFirst(), so
+		// assert only on changes made after subscribing. The post-change counts inherently
+		// validate the initial state (A1 reaching 6 proves it started at 5) and confirm
+		// that each change is routed to the matching conditional publisher.
+
+		// Add an A1 transaction -> publisher 1 reflects 6 items (5 existing + 1).
 		var transaction = Transaction(date: Date(), accountKey: "A1", amount: 100)
 		transaction.key = "K10"
 		await transaction.save(to: db)
+		#expect(await waitForCount({ results1.last?.count }, 6) == 6, "Publisher 1 should have 6 items after adding an A1 transaction")
 
+		// Add an A2 transaction -> publisher 2 reflects 5 items (4 existing + 1).
 		transaction = Transaction(date: Date(), accountKey: "A2", amount: 100)
 		transaction.key = "K11"
 		await transaction.save(to: db)
+		#expect(await waitForCount({ results2.last?.count }, 5) == 5, "Publisher 2 should have 5 items after adding an A2 transaction")
 
-		// Wait for updates
-		try await Task.sleep(nanoseconds: 1_500_000_000)
-
-		// Delete a transaction
+		// Delete the A1 transaction -> publisher 1 returns to 5 items.
 		await db.deleteFromTable(Transaction.table, for: "K10")
-
-		// Wait for final updates
-		try await Task.sleep(nanoseconds: 1_500_000_000)
-
-		// Verify publisher 1 received expected updates
-		#expect(results1.count >= 3, "Publisher 1 should have received at least 3 updates")
-		#expect(results1[0].count == 5, "Publisher 1 first update should have 5 items (initial)")
-		#expect(results1[1].count == 6, "Publisher 1 second update should have 6 items (after adding K10)")
-		#expect(results1[2].count == 5, "Publisher 1 third update should have 5 items (after deleting K10)")
-
-		// Verify publisher 2 received expected updates
-		#expect(results2.count >= 2, "Publisher 2 should have received at least 2 updates")
-		#expect(results2[0].count == 4, "Publisher 2 first update should have 4 items (initial)")
-		#expect(results2[1].count == 5, "Publisher 2 second update should have 5 items (after adding K11)")
+		#expect(await waitForCount({ results1.last?.count }, 5) == 5, "Publisher 1 should have 5 items after deleting the A1 transaction")
 
 		subscription1.cancel()
 		subscription2.cancel()

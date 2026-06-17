@@ -19,14 +19,6 @@ public actor AgileDB {
 		case bool
 		case null
 		case unknown
-
-		static func fromRaw(_ rawValue: String) -> ValueType {
-			if let valueType = ValueType(rawValue: rawValue.lowercased()) {
-				return valueType
-			}
-
-			return .unknown
-		}
 	}
 
 	public static let shared = AgileDB()
@@ -502,9 +494,7 @@ public actor AgileDB {
 		}
 
 		let d1 = await sqlExecute("drop table \(table)")
-		let d2 = await sqlExecute("drop table \(table)_arrayValues")
-		let d3 = await sqlExecute("delete from __tableArrayColumns where tableName = '\(table)'")
-		if !d1 || !d2 || !d3 {
+		if !d1 {
 			return false
 		}
 
@@ -787,7 +777,6 @@ public actor AgileDB {
 							}
 						} else {
 							await sqlExecute("delete from \(tableName) where key in (select key from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)')")
-							await sqlExecute("delete from \(tableName)_arrayValues where key in (select key from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)')")
 							await sqlExecute("delete from __synclog where tableName = '\(tableName)' and timeStamp < '\(timeStamp)'")
 							await sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(tableName)','X',NULL)")
 						}
@@ -909,8 +898,7 @@ public actor AgileDB {
 
 	private func makeDB() async {
 		await sqlExecute("create table __settings(key text, value text)")
-		await sqlExecute("insert into __settings(key,value) values('schema',1)")
-		await sqlExecute("create table __tableArrayColumns(tableName text, arrayColumns text)")
+		await sqlExecute("insert into __settings(key,value) values('schema',3)")
 	}
 
 	private func checkSchema() async {
@@ -919,7 +907,7 @@ public actor AgileDB {
 		if let tableList = tableList {
 			for tableRow in tableList {
 				let table = tableRow.values[0] as! String
-				if !AgileDB.reservedTable(table) && !table.hasSuffix("_arrayValues") {
+				if !AgileDB.reservedTable(table) {
 					tables.addTable(DBTable(name: table))
 				}
 
@@ -945,14 +933,6 @@ public actor AgileDB {
 				await sqlExecute("insert into __settings(key,value) values('dbInstanceKey','\(dbInstanceKey)')")
 			} else {
 				dbInstanceKey = keyResults[0].values[0] as! String
-			}
-		}
-
-		if let schemaResults = await sqlRows("select value from __settings where key = 'schema'") {
-			var schemaVersion = Int((schemaResults[0].values[0] as! String))!
-			if schemaVersion == 1 {
-				await sqlExecute("update __settings set value = 2 where key = 'schema'")
-				schemaVersion = 2
 			}
 		}
 	}
@@ -1001,48 +981,26 @@ extension AgileDB {
 // MARK: - Internal data handling methods
 extension AgileDB {
 	func keysInTableSQL(table: DBTable, sortOrder: String?, conditions: [DBCondition]?, validateObjecs: Bool, testKey: String? = nil) async -> String? {
-		var arrayColumns = [String]()
-		if let results = await sqlRows("select arrayColumns from __tableArrayColumns where tableName = '\(table)'") {
-			if results.isNotEmpty {
-				arrayColumns = (results[0].values[0] as! String).split { $0 == "," }.map { String($0) }
-			}
-		} else {
-			return nil
-		}
-
-		let tableColumns = (await columnsInTable(table)).map({ $0.name }) + ["key"]
-		var selectClause = "select distinct a.key from \(table) a"
+		// All object properties live in the `value` JSON document, so conditions are
+		// expressed with json_extract / json_each rather than physical columns. There is
+		// no schema to validate against, so `validateObjecs` is intentionally ignored.
+		let selectClause = "select distinct a.key from \(table) a"
 
 		var whereClause = ""
 
-		if var conditionSet = conditions {
-			if validateObjecs {
-				let invalidSets = conditionSet.filter({ !tableColumns.contains($0.objectKey) }).compactMap({ $0.set })
-				let validConditions = conditionSet.filter({ !invalidSets.contains($0.set) })
-				conditionSet = validConditions
+		if let conditionSet = conditions, conditionSet.isNotEmpty {
+			let pages = conditionSetPages(from: conditionSet)
+			var pageClauses: [String] = []
+
+			for page in pages {
+				pageClauses.append(pageClause(table: table, conditions: conditionSet.filter({ $0.set == page })))
 			}
 
-			for condition in conditionSet {
-				if condition.conditionOperator == .contains && arrayColumns.filter({ $0 == condition.objectKey }).count == 1 {
-					selectClause += " left outer join \(table)_arrayValues b on a.key = b.key"
-					break
-				}
-			}
-
-			if conditionSet.count > 0 {
-				let pages = conditionSetPages(from: conditionSet)
-				var pageClauses: [String] = []
-
-				for page in pages {
-					pageClauses.append(pageClause(table: table, conditions: conditionSet.filter({ $0.set == page }), arrayColumns: arrayColumns))
-				}
-
-				for (index, pageClause) in pageClauses.enumerated() {
-					if index > 0 {
-						whereClause += "\nOR \(pageClause)"
-					} else {
-						whereClause += pageClause
-					}
+			for (index, pageClause) in pageClauses.enumerated() {
+				if index > 0 {
+					whereClause += "\nOR \(pageClause)"
+				} else {
+					whereClause += pageClause
 				}
 			}
 		}
@@ -1062,7 +1020,7 @@ extension AgileDB {
 		}
 
 		if let sortOrder = sortOrder {
-			whereClause += " order by \(sortOrder)"
+			whereClause += " order by \(jsonSortClause(sortOrder))"
 		}
 
 		let sql = selectClause + whereClause
@@ -1070,6 +1028,37 @@ extension AgileDB {
 			print("^^^ SQL: \(NSString(string: sql))")
 		}
 		return sql
+	}
+
+	/// Translates a comma-delimited list of property names (each optionally followed by
+	/// `asc`/`desc`) into json_extract expressions over the `value` document.
+	private func jsonSortClause(_ sortOrder: String) -> String {
+		var terms: [String] = []
+		for part in sortOrder.split(separator: ",") {
+			let tokens = part.split(separator: " ").map(String.init).filter({ $0.isNotEmpty })
+			guard let field = tokens.first else { continue }
+			var term = fieldExpression(for: field)
+			if tokens.count > 1 {
+				let direction = tokens[1].lowercased()
+				if direction == "asc" || direction == "desc" {
+					term += " \(direction)"
+				}
+			}
+			terms.append(term)
+		}
+
+		return terms.joined(separator: ", ")
+	}
+
+	/// `key` and the date fields are stored as real columns; every other property lives in
+	/// the `value` JSON document and is reached with json_extract.
+	private func fieldExpression(for objectKey: String) -> String {
+		let reservedColumns: Set<String> = ["key", "addedDateTime", "updatedDateTime", "autoDeleteDateTime"]
+		if reservedColumns.contains(objectKey) {
+			return objectKey
+		}
+
+		return "json_extract(value, '$.\(objectKey)')"
 	}
 
 	private func conditionSetPages(from conditions: [DBCondition]) -> Set<Int> {
@@ -1081,10 +1070,10 @@ extension AgileDB {
 		return pages
 	}
 
-	private func pageClause(table: DBTable, conditions: [DBCondition], arrayColumns: [String]) -> String {
+	private func pageClause(table: DBTable, conditions: [DBCondition]) -> String {
 		var whereClause = "a.key in (select key from \(table.name) where "
 		for (index, condition) in conditions.enumerated() {
-			let conditionClause = conditionClause(from: condition, arrayColumns: arrayColumns)
+			let conditionClause = conditionClause(from: condition, table: table)
 			if index > 0 {
 				whereClause += " AND \(conditionClause)"
 			} else {
@@ -1096,24 +1085,28 @@ extension AgileDB {
 		return whereClause
 	}
 
-	private func conditionClause(from condition: DBCondition, arrayColumns: [String]) -> String {
-		let valueType = SQLiteCore.typeOfValue(condition.value)
+	private func conditionClause(from condition: DBCondition, table: DBTable) -> String {
+		let path = "'$.\(condition.objectKey)'"
+		let extract = fieldExpression(for: condition.objectKey)
+		let isReserved = extract == condition.objectKey
 		var whereClause = ""
+
 		switch condition.conditionOperator {
 		case .contains:
-			if arrayColumns.contains(condition.objectKey) {
-				switch valueType {
-				case .text:
-					whereClause += "b.objectKey = '\(condition.objectKey)' and b.stringValue = '\(esc(condition.value as! String))'"
-				case .int:
-					whereClause += "b.objectKey = '\(condition.objectKey)' and b.intValue = \(condition.value)"
-				case .double:
-					whereClause += "b.objectKey = '\(condition.objectKey)' and b.doubleValue = \(condition.value)"
-				default:
-					break
+			// `contains` is overloaded: membership for JSON arrays, substring for JSON text.
+			// Resolve which at query time via json_type so no array metadata is needed.
+			// Array membership re-joins the document by key with json_each — a correlated
+			// json_each(value, …) inside a subquery is not evaluated by SQLite.
+			if let stringValue = condition.value as? String {
+				let substring = "\(extract) like '%\(esc(stringValue))%'"
+				if isReserved {
+					whereClause += substring
+				} else {
+					let membership = "key in (select jt.key from \(table.name) jt, json_each(jt.value, \(path)) je where je.value = '\(esc(stringValue))')"
+					whereClause += "((json_type(value, \(path)) = 'array' AND \(membership)) OR (json_type(value, \(path)) <> 'array' AND \(substring)))"
 				}
-			} else {
-				whereClause += " \(condition.objectKey) like '%%\(esc(condition.value as! String))%%'"
+			} else if !isReserved {
+				whereClause += "key in (select jt.key from \(table.name) jt, json_each(jt.value, \(path)) je where je.value = \(condition.value))"
 			}
 
 		case .inList:
@@ -1143,19 +1136,20 @@ extension AgileDB {
 			}
 
 			if listItems.isNotEmpty {
-				whereClause += " \(condition.objectKey) in (\(listItems))"
+				whereClause += " \(extract) in (\(listItems))"
 			}
 
 		default:
 			if let conditionValue = condition.value as? String {
-				whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) '\(esc(conditionValue))'"
+				whereClause += " \(extract) \(condition.conditionOperator.rawValue) '\(esc(conditionValue))'"
 			} else if let conditionValue = condition.value as? Date {
-				whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) '\(AgileDB.stringValueForDate(conditionValue))'"
+				whereClause += " \(extract) \(condition.conditionOperator.rawValue) '\(AgileDB.stringValueForDate(conditionValue))'"
 			} else if let conditionValue = condition.value as? Bool {
+				// json_extract returns 1/0 for JSON booleans.
 				let boolValue = conditionValue ? 1 : 0
-				whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) \(boolValue)"
+				whereClause += " \(extract) \(condition.conditionOperator.rawValue) \(boolValue)"
 			} else {
-				whereClause += " \(condition.objectKey) \(condition.conditionOperator.rawValue) \(condition.value)"
+				whereClause += " \(extract) \(condition.conditionOperator.rawValue) \(condition.value)"
 			}
 		}
 
@@ -1172,88 +1166,39 @@ extension AgileDB {
 			return false
 		}
 
-		var arrayKeys = [String]()
-		var arrayKeyTypes = [String]()
-		var arrayTypes = [ValueType]()
-		var arrayValues = [any Sendable]()
+		// The whole object is stored as a single JSON document in the `value` column.
+		// Strip the key and the reserved date fields (those live in dedicated columns).
+		var documentValues = objectValues
+		documentValues.removeValue(forKey: "key")
+		documentValues.removeValue(forKey: "addedDateTime")
+		documentValues.removeValue(forKey: "updatedDateTime")
+		documentValues.removeValue(forKey: "autoDeleteDateTime")
 
-		for (objectKey, objectValue) in objectValues {
-			let valueType = SQLiteCore.typeOfValue(objectValue)
-			if [.textArray, .intArray, .doubleArray].contains(valueType) {
-				arrayKeys.append(objectKey)
-				arrayTypes.append(valueType)
-				arrayKeyTypes.append("\(objectKey):\(valueType.rawValue)")
-				arrayValues.append(objectValue)
-			}
-		}
+		guard let jsonString = jsonString(from: documentValues) else { return false }
 
-		let joinedArrayKeys = arrayKeyTypes.joined(separator: ",")
+		// Determine prior existence so the sync log can prune superseded entries, and so
+		// the original addedDateTime is preserved on update.
+		guard let existing = await sqlRows("select 1 from \(table) where key = '\(esc(key))'") else { return false }
+		let tableHasKey = existing.isNotEmpty
 
-		var sql = "select key from \(esc(table.name)) where key = '\(esc(key))'"
+		// A single-row UPSERT makes the write atomic without a sidecar to keep in sync.
+		let sql = "insert into \(table) (key,addedDateTime,updatedDateTime,autoDeleteDateTime,value)"
+			+ " values('\(esc(key))','\(addedDateTime)','\(updatedDateTime)',\(deleteDateTime),?)"
+			+ " on conflict(key) do update set updatedDateTime='\(updatedDateTime)',autoDeleteDateTime=\(deleteDateTime),value=excluded.value"
 
-		var tableHasKey = false
-		guard let results = await sqlRows(sql) else { return false }
-
-		if results.isEmpty {
-			sql = "insert into \(table) (key,addedDateTime,updatedDateTime,autoDeleteDateTime,hasArrayValues"
-			var placeHolders = "'\(key)','\(addedDateTime)','\(updatedDateTime)',\(deleteDateTime),'\(joinedArrayKeys)'"
-
-			for (objectKey, objectValue) in objectValues {
-				if objectKey == "key" { continue }
-
-				let valueType = SQLiteCore.typeOfValue(objectValue)
-				if [.int, .double, .text, .bool].contains(valueType) {
-					sql += ",\(objectKey)"
-					placeHolders += ",?"
-				}
-			}
-
-			sql += ") values(\(placeHolders))"
-		} else {
-			tableHasKey = true
-			sql = "update \(table) set updatedDateTime='\(updatedDateTime)',autoDeleteDateTime=\(deleteDateTime),hasArrayValues='\(joinedArrayKeys)'"
-			for (objectKey, objectValue) in objectValues {
-				if objectKey == "key" { continue }
-
-				let valueType = SQLiteCore.typeOfValue(objectValue)
-				if [.int, .double, .text, .bool].contains(valueType) {
-					sql += ",\(objectKey)=?"
-				}
-			}
-			let objectKeys = objectValues.keys
-			let columns = await columnsInTable(table)
-			for column in columns {
-				let filteredKeys = objectKeys.filter({ $0 == column.name })
-				if filteredKeys.isEmpty {
-					sql += ",\(column.name)=NULL"
-				}
-			}
-			sql += " where key = '\(key)'"
-		}
-
-		if !(await setTableValues(objectValues: objectValues, sql: sql)) {
-			await validateTableColumns(table: table, objectValues: objectValues as [String: any Sendable])
-			if !(await setTableValues(objectValues: objectValues, sql: sql)) {
-				return false
-			}
-		}
-
-		for index in 0 ..< arrayKeys.count {
-			if !(await setArrayValues(table: table, arrayValues: arrayValues[index] as! [any Sendable], valueType: arrayTypes[index], key: key, objectKey: arrayKeys[index])) {
-				return false
-			}
+		if !(await sqlExecute(sql, parameters: [jsonString])) {
+			return false
 		}
 
 		if syncingEnabled && unsyncedTables.doesNotContain(table) {
 			let now = AgileDB.stringValueForDate(Date())
-			sql = "insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(table)','U','\(esc(key))')"
+			let logSQL = "insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(table)','U','\(esc(key))')"
 
-			if await sqlExecute(sql) {
+			if await sqlExecute(logSQL) {
 				let lastID = await lastInsertID()
 
 				if tableHasKey {
-					sql = "delete from __synclog where tableName = '\(table)' and key = '\(self.esc(key))' and rowid < \(lastID)"
-					await sqlExecute(sql)
+					await sqlExecute("delete from __synclog where tableName = '\(table)' and key = '\(self.esc(key))' and rowid < \(lastID)")
 				}
 			}
 		}
@@ -1261,34 +1206,14 @@ extension AgileDB {
 		return true
 	}
 
-	private func setTableValues(objectValues: [String: any Sendable], sql: String) async -> Bool {
-		await withCheckedContinuation { continuation in
-			dbCore.setTableValues(objectValues: objectValues, sql: sql) { success in
-				continuation.resume(returning: success)
-			}
-		}
-	}
+	/// Serializes an object-value dictionary to a JSON string for storage in the `value` column.
+	private func jsonString(from dict: [String: any Sendable]) -> String? {
+		guard JSONSerialization.isValidJSONObject(dict),
+			  let data = try? JSONSerialization.data(withJSONObject: dict),
+			  let string = String(data: data, encoding: .utf8)
+		else { return nil }
 
-	private func setArrayValues(table: DBTable, arrayValues: [any Sendable], valueType: ValueType, key: String, objectKey: String) async -> Bool {
-		var successful = await sqlExecute("delete from \(table)_arrayValues where key='\(key)' and objectKey='\(objectKey)'")
-		if !successful { return false }
-
-		for value in arrayValues {
-			switch valueType {
-			case .textArray:
-				successful = await sqlExecute("insert into \(table)_arrayValues(key,objectKey,stringValue) values('\(key)','\(objectKey)','\(esc(value as! String))')")
-			case .intArray:
-				successful = await sqlExecute("insert into \(table)_arrayValues(key,objectKey,intValue) values('\(key)','\(objectKey)',\(value as! Int))")
-			case .doubleArray:
-				successful = await sqlExecute("insert into \(table)_arrayValues(key,objectKey,doubleValue) values('\(key)','\(objectKey)',\(value as! Double))")
-			default:
-				successful = true
-			}
-
-			if !successful { return false }
-		}
-
-		return true
+		return string
 	}
 
 	private func deleteForKey(table: DBTable, key: String, autoDelete: Bool, sourceDB: String, originalDB: String) async -> Bool {
@@ -1298,8 +1223,7 @@ extension AgileDB {
 		if !tables.hasTable(table) { return false }
 
 		let del1 = await sqlExecute("delete from \(table) where key = '\(esc(key))'")
-		let del2 = await sqlExecute("delete from \(table)_arrayValues where key = '\(esc(key))'")
-		if !del1 || !del2 { return false }
+		if !del1 { return false }
 
 		let now = AgileDB.stringValueForDate(Date())
 		if syncingEnabled && unsyncedTables.doesNotContain(table) {
@@ -1345,205 +1269,80 @@ extension AgileDB {
 		if case .failure = openResults { return nil }
 		if !tables.hasTable(table) { return nil }
 
-		var columns = await columnsInTable(table)
+		var sql = "select value"
 		if includeDates {
-			columns.append(TableColumn(name: "autoDeleteDateTime", type: .text))
-			columns.append(TableColumn(name: "addedDateTime", type: .text))
-			columns.append(TableColumn(name: "updatedDateTime", type: .text))
-		}
-
-		var sql = "select hasArrayValues"
-		for column in columns {
-			sql += ",\(column.name)"
+			sql += ",autoDeleteDateTime,addedDateTime,updatedDateTime"
 		}
 		sql += " from \(table) where key = '\(esc(key))'"
 
-		let results = await sqlRows(sql)
+		guard let results = await sqlRows(sql), results.isNotEmpty else { return nil }
+		let row = results[0]
 
-		return await dictValueResults(table: table, key: key, results: results, columns: columns)
-	}
+		guard let jsonText = row.values[0] as? String,
+			  let data = jsonText.data(using: .utf8),
+			  var valueDict = (try? JSONSerialization.jsonObject(with: data)) as? [String: any Sendable]
+		else { return nil }
 
-	private func dictValueResults(table: DBTable, key: String, results: [DBRow]?, columns: [TableColumn]) async -> [String: any Sendable]? {
-		guard let results = results, results.isNotEmpty else { return nil }
-
-		var valueDict = [String: any Sendable]()
-		for (columnIndex, column) in columns.enumerated() {
-			let valueIndex = columnIndex + 1
-			if results[0].values[valueIndex] != nil {
-				if column.type == .bool, let intValue = results[0].values[valueIndex] as? Int {
-					valueDict[column.name] = (intValue == 0 ? false : true) as any Sendable
-				} else {
-					valueDict[column.name] = results[0].values[valueIndex]
-				}
-			}
-		}
-
-		let arrayObjects = (results[0].values[0] as! String).split { $0 == "," }.map { String($0) }
-		for object in arrayObjects {
-			if object == "" { continue }
-
-			let keyType = object.split { $0 == ":" }.map { String($0) }
-			let objectKey = keyType[0]
-			let valueType = ValueType(rawValue: keyType[1] as String)!
-			var stringArray = [String]()
-			var intArray = [Int]()
-			var doubleArray = [Double]()
-
-			var arrayQueryResults: [DBRow]?
-			switch valueType {
-			case .textArray:
-				arrayQueryResults = await sqlRows("select stringValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
-			case .intArray:
-				arrayQueryResults = await sqlRows("select intValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
-			case .doubleArray:
-				arrayQueryResults = await sqlRows("select doubleValue from \(table)_arrayValues where key = '\(key)' and objectKey = '\(objectKey)'")
-				valueDict[objectKey] = doubleArray as any Sendable
-			default:
-				break
-			}
-
-			guard let arrayResults = arrayQueryResults else { return nil }
-
-			for index in 0 ..< arrayResults.count {
-				switch valueType {
-				case .textArray:
-					stringArray.append(arrayResults[index].values[0] as! String)
-				case .intArray:
-					intArray.append(arrayResults[index].values[0] as! Int)
-				case .doubleArray:
-					doubleArray.append(arrayResults[index].values[0] as! Double)
-				default:
-					break
-				}
-			}
-
-			switch valueType {
-			case .textArray:
-				valueDict[objectKey] = stringArray as any Sendable
-			case .intArray:
-				valueDict[objectKey] = intArray as any Sendable
-			case .doubleArray:
-				valueDict[objectKey] = doubleArray as any Sendable
-			default:
-				break
-			}
+		if includeDates {
+			if let value = row.values[1] as? String { valueDict["autoDeleteDateTime"] = value as any Sendable }
+			if let value = row.values[2] as? String { valueDict["addedDateTime"] = value as any Sendable }
+			if let value = row.values[3] as? String { valueDict["updatedDateTime"] = value as any Sendable }
 		}
 
 		return valueDict
 	}
 
 	// MARK: - Internal Table methods
-	struct TableColumn {
-		fileprivate var name: String
-		fileprivate var type: ValueType
-
-		fileprivate init(name: String, type: ValueType) {
-			self.name = name
-			self.type = type
-		}
-	}
-
 	static func reservedTable(_ table: String) -> Bool {
 		return table.hasPrefix("__") || table.hasPrefix("sqlite_stat")
-	}
-
-	private func reservedColumn(_ column: String) -> Bool {
-		return column == "key"
-			|| column == "addedDateTime"
-			|| column == "updatedDateTime"
-			|| column == "autoDeleteDateTime"
-			|| column == "hasArrayValues"
-			|| column == "arrayValues"
 	}
 
 	private func createTable(_ table: DBTable) async -> Bool {
 		if tables.hasTable(table) { return true }
 
-		let ct1 = await sqlExecute("create table \(table) (key text PRIMARY KEY, autoDeleteDateTime text, addedDateTime text, updatedDateTime text, hasArrayValues text)")
+		let ct1 = await sqlExecute("create table \(table) (key text PRIMARY KEY, autoDeleteDateTime text, addedDateTime text, updatedDateTime text, value text)")
 		let ct2 = await sqlExecute("create index idx_\(table)_autoDeleteDateTime on \(table)(autoDeleteDateTime)")
 		if !ct1 || !ct2 { return false }
 
-		let ct3 = await sqlExecute("create table \(table)_arrayValues (key text, objectKey text, stringValue text, intValue int, doubleValue double)")
-		let ct4 = await sqlExecute("create index idx_\(table)_arrayValues_keys on \(table)_arrayValues(key,objectKey)")
-		if !ct3 || !ct4 { return false }
-
 		tables.addTable(table)
+
+		// Apply any indexes that were declared before the table physically existed.
+		await createIndexesForTable(table)
 
 		return true
 	}
 
+	/// Declares the indexes requested for a table. Each index field is materialized as a
+	/// VIRTUAL generated column over `json_extract(value, '$.field')`, then indexed. This
+	/// gives both index-backed lookups and real column names usable from direct SQL.
 	private func createIndexesForTable(_ table: DBTable) async {
 		if !tables.hasTable(table) { return }
 
-		if let tableIndexes = indexes[table.name] {
-			for index in tableIndexes {
-				var indexName = index.replacingOccurrences(of: ",", with: "_")
-				indexName = "idx_\(table)_\(indexName)"
+		guard let tableIndexes = indexes[table.name] else { return }
 
-				var sql = "select * from sqlite_master where tbl_name = '\(table)' and name = '\(indexName)'"
-				if let results = await sqlRows(sql), results.isEmpty {
-					sql = "CREATE INDEX \(indexName) on \(table)(\(index))"
-					_ = await sqlExecute(sql)
-				}
+		let existingColumns = Set(await columnNames(in: table))
+
+		for index in tableIndexes {
+			let fields = index.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }).filter({ $0.isNotEmpty })
+			if fields.isEmpty { continue }
+
+			for field in fields where !existingColumns.contains(field) {
+				_ = await sqlExecute("alter table \(table) add column \(field) GENERATED ALWAYS AS (json_extract(value, '$.\(field)')) VIRTUAL")
+			}
+
+			let indexName = "idx_\(table)_" + fields.joined(separator: "_")
+			let columnsList = fields.joined(separator: ",")
+			if let results = await sqlRows("select * from sqlite_master where tbl_name = '\(table)' and name = '\(indexName)'"), results.isEmpty {
+				_ = await sqlExecute("CREATE INDEX \(indexName) on \(table)(\(columnsList))")
 			}
 		}
 	}
 
-	private func columnsInTable(_ table: DBTable) async -> [TableColumn] {
-		guard let tableInfo = await sqlRows("pragma table_info(\(table))") else { return [] }
-		var columns = [TableColumn]()
-		for info in tableInfo {
-			let columnName = info.values[1] as! String
-			if !reservedColumn(columnName) {
-				let rawValue = info.values[2] as! String
-				let valueType = ValueType.fromRaw(rawValue)
-				columns.append(TableColumn(name: columnName, type: valueType))
-			}
-		}
-
-		return columns
-	}
-
-	private func validateTableColumns(table: DBTable, objectValues: [String: any Sendable]) async {
-		let columns = await columnsInTable(table)
-		for (objectKey, value) in objectValues {
-			if objectKey == "key" { continue }
-
-			assert(!reservedColumn(objectKey as String), "Reserved column")
-			assert((objectKey as String).range(of: "'") == nil, "Single quote not allowed in column names")
-
-			let found = columns.filter({ $0.name == objectKey }).isNotEmpty
-
-			if !found {
-				let valueType = SQLiteCore.typeOfValue(value)
-				assert(valueType != .unknown, "column types are int, double, string, bool or arrays of int, double, or string")
-
-				if valueType == .null { continue }
-
-				if [.int, .double, .text].contains(valueType) {
-					let sql = "alter table \(table) add column \(objectKey) \(valueType.rawValue)"
-					_ = await sqlExecute(sql)
-				} else if valueType == .bool {
-					let sql = "alter table \(table) add column \(objectKey) int"
-					_ = await sqlExecute(sql)
-				} else {
-					let sql = "select arrayColumns from __tableArrayColumns where tableName = '\(table)'"
-					if let results = await sqlRows(sql) {
-						var arrayColumns = ""
-						if results.isNotEmpty {
-							arrayColumns = results[0].values[0] as! String
-							arrayColumns += ",\(objectKey)"
-							_ = await sqlExecute("delete from __tableArrayColumns where tableName = '\(table)'")
-						} else {
-							arrayColumns = objectKey as String
-						}
-						_ = await sqlExecute("insert into __tableArrayColumns(tableName,arrayColumns) values('\(table)','\(arrayColumns)')")
-					}
-				}
-			}
-		}
-
-		await createIndexesForTable(table)
+	private func columnNames(in table: DBTable) async -> [String] {
+		// table_xinfo (not table_info) reports VIRTUAL generated columns, so a previously
+		// declared index column is detected and not re-added.
+		guard let tableInfo = await sqlRows("pragma table_xinfo(\(table))") else { return [] }
+		return tableInfo.compactMap({ $0.values[1] as? String })
 	}
 
 	// MARK: - SQLite execute/query
@@ -1551,6 +1350,16 @@ extension AgileDB {
 	private func sqlExecute(_ sql: String) async -> Bool {
 		await withCheckedContinuation { continuation in
 			_ = dbCore.sqlExecute(sql) { success in
+				continuation.resume(returning: success)
+			}
+		}
+	}
+
+	/// Executes a statement binding the given parameters (in order) to its `?` placeholders.
+	@discardableResult
+	private func sqlExecute(_ sql: String, parameters: [any Sendable]) async -> Bool {
+		await withCheckedContinuation { continuation in
+			_ = dbCore.sqlExecute(sql, parameters: parameters) { success in
 				continuation.resume(returning: success)
 			}
 		}
@@ -1881,7 +1690,7 @@ private extension AgileDB {
 
 		}
 
-		func setTableValues(objectValues: [String: any Sendable], sql: String, completion: @escaping @Sendable (_ success: Bool) -> Void) {
+		func sqlExecute(_ sql: String, parameters: [any Sendable], completion: @escaping @Sendable (_ success: Bool) -> Void) -> UInt {
 			let block = { @Sendable [unowned self] in
 				var dbps: OpaquePointer?
 				defer {
@@ -1895,45 +1704,32 @@ private extension AgileDB {
 					self.displaySQLError(sql)
 					completion(false)
 					return
-				} else {
-					var index: Int32 = 1
+				}
 
-					for (objectKey, objectValue) in objectValues {
-						if objectKey == "key" { continue }
-
-						let valueType = SQLiteCore.typeOfValue(objectValue)
-						guard [.int, .double, .text, .bool].contains(valueType) else { continue }
-
-						let value: any Sendable
-						if valueType == .bool, let boolValue = objectValue as? Bool {
-							value = (boolValue ? 1 : 0) as any Sendable
-						} else {
-							value = objectValue
-						}
-
-						status = self.bindValue(dbps!, index: index, value: value)
-						if status != SQLITE_OK {
-							self.displaySQLError(sql)
-							completion(false)
-							return
-						}
-
-						index += 1
-					}
-
-					status = sqlite3_step(dbps)
-					if status != SQLITE_DONE && status != SQLITE_OK {
+				var index: Int32 = 1
+				for parameter in parameters {
+					status = self.bindValue(dbps!, index: index, value: parameter)
+					if status != SQLITE_OK {
 						self.displaySQLError(sql)
 						completion(false)
 						return
 					}
+
+					index += 1
+				}
+
+				status = sqlite3_step(dbps)
+				if status != SQLITE_DONE && status != SQLITE_OK {
+					self.displaySQLError(sql)
+					completion(false)
+					return
 				}
 
 				completion(true)
 				return
 			}
 
-			addBlock(block)
+			return addBlock(block)
 		}
 
 		private func bindValue(_ statement: OpaquePointer, index: Int32, value: any Sendable) -> Int32 {

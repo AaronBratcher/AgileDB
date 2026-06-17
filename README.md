@@ -16,7 +16,7 @@
 - For any method that returns an optional, that value is nil if an error occured and could not return a proper value.
 
 ## DBObject Protocol ##
-- DBbjects can have the following types saved and read to the DB: DBObject, Int, Double, String, Date, Bool, Dictionary, Codable Struct [DBObject], [Int], [Double], [String], [Date], [Dictionary], [Codable Struct] (Dictionary and Struct and array alternatives saved as JSON text in DB column). All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
+- DBbjects can have the following types saved and read to the DB: DBObject, Int, Double, String, Date, Bool, Dictionary, Codable Struct [DBObject], [Int], [Double], [String], [Date], [Dictionary], [Codable Struct]. All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
 - Bool properties read from the database will be interpreted as follows: An integer 0 = false and any other number is true. For string values "1", "yes", "YES", "true", and "TRUE" evaluate to true.
 
 ### Protocol Definition ###
@@ -308,17 +308,56 @@ do {
 - load in the DBObject protocol
 
 ## SQL Queries ##
-AgileDB allows you to do standard SQL selects for more complex queries. Because the values given are actually broken into separate columns in the tables, a standard SQL statement can be passed in and an array of rows (arrays of values) will be optionally returned.
+AgileDB lets you run standard SQL `select` statements for more complex queries — joins, aggregates, grouping, and so on. `sqlSelect` returns an array of rows (each row an array of values), or throws on error.
 
-```
+Each object is stored as a single JSON document in its table's `value` column, alongside the `key`, `addedDateTime`, `updatedDateTime`, and `autoDeleteDateTime` columns. Individual object properties are therefore **not** their own columns. To reference a property as if it were a column, use SQLite's `json_extract(value, '$.propertyName')`:
+
+```swift
 let db = AgileDB.shared
-let sql = "select name from accounts a inner join categories c on c.accountKey = a.key order by a.name"
+// "account" is a property inside each row's JSON document, not a physical column,
+// so it must be addressed with json_extract.
+let sql = "select key from accounts where json_extract(value, '$.account') = 'ACCT1'"
 do {
     let results = try await db.sqlSelect(sql)
     // process results
 } catch {
     // handle error
 }
+```
+
+`key`, `addedDateTime`, `updatedDateTime`, and `autoDeleteDateTime` are real columns and may be referenced directly by name.
+
+### Joining related objects ###
+A nested `DBObject` property stores the referenced object's `key`, and a `[DBObject]` property stores an array of keys. Join them back to their tables using `json_extract` (for a single reference) and `json_each` (to expand an array of keys):
+
+```swift
+// Invoice -> Client (single reference): the invoice's "client" property holds the client's key.
+let clientJoin = """
+select json_extract(c.value, '$.name')
+from Invoice i
+join InvoiceClient c on json_extract(i.value, '$.client') = c.key
+where json_extract(i.value, '$.number') = 1001
+"""
+
+// Invoice -> line items (array of keys): expand the array with json_each, then join by key.
+let itemTotals = """
+select json_extract(c.value, '$.name'),
+       sum(json_extract(item.value, '$.quantity') * json_extract(item.value, '$.price'))
+from Invoice i
+join InvoiceClient c on json_extract(i.value, '$.client') = c.key,
+     json_each(i.value, '$.lineItems') je
+join InvoiceLineItem item on je.value = item.key
+group by i.key
+"""
+```
+
+### Indexing properties as named columns ###
+To query a property by name directly (and to index it for performance), declare it with `setIndexesForTable(_:to:)`. Each indexed property becomes an indexed, generated column derived from the JSON document, so it can be used by name in SQL:
+
+```swift
+await db.setIndexesForTable("accounts", to: ["account"])
+// "account" is now a real, indexed column and can be referenced directly.
+let results = try await db.sqlSelect("select key from accounts where account = 'ACCT1'")
 ```
 
 ## Syncing ##
@@ -382,6 +421,7 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
     
 # Revision History
 ### 7.0 ###
+- Objects are now stored as a single JSON document in each table's `value` column (rather than one physical column per property plus a side table for arrays). Direct SQL `select` statements must reference properties with `json_extract(value, '$.property')`; use `json_each` to join across array-of-key relationships, or declare indexes with `setIndexesForTable(_:to:)` to expose properties as named, indexed columns.
 - AgileDB is now implemented as a Swift `actor` and is fully Swift 6 language-mode compliant.
 - Asynchronous (async/await) methods are now the primary API. Most low-level methods are `async`, and those that can fail are `async throws`.
 - Dictionary values now use `any Sendable` rather than `AnyObject`.

@@ -117,7 +117,8 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 	}
 
 	func encode(_ value: Data, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as any Sendable
+		// Data is not JSON-serializable; persist as a base64 string in the value document.
+		encoder.dbDict[key.stringValue] = value.base64EncodedString() as any Sendable
 	}
 
 	func encode(_ value: Int64, forKey key: K) throws { }

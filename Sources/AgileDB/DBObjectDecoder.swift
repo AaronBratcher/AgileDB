@@ -231,6 +231,11 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 			return doubleValue
 		}
 
+		// JSON serialization can read a whole-number double back as an integer.
+		if let intValue = value as? Int {
+			return Double(intValue)
+		}
+
 		guard let stringValue = value as? String
 		, let doubleValue = Double(stringValue)
 			else {
@@ -250,6 +255,11 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 		for value in values {
 			if let doubleValue = value as? Double {
 				doubleValues.append(doubleValue)
+				continue
+			}
+
+			if let intValue = value as? Int {
+				doubleValues.append(Double(intValue))
 				continue
 			}
 
@@ -278,7 +288,12 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	}
 
 	func decode(_ type: Data.Type, forKey key: K) throws -> Data {
-		guard let value = dict[key.stringValue] as? Data else {
+		if let value = dict[key.stringValue] as? Data {
+			return value
+		}
+
+		guard let stringValue = dict[key.stringValue] as? String,
+			  let value = Data(base64Encoded: stringValue) else {
 			throw DictDecoderError.missingValueForKey(key.stringValue)
 		}
 		return value

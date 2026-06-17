@@ -19,10 +19,11 @@ struct ConditionTests {
 		let table: DBTable = "table51"
 		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1}", autoDeleteAfter: nil)
 
+		// In the JSON document model there is no fixed schema, so a condition on a property
+		// that no stored object contains simply matches nothing rather than erroring.
 		let accountCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .equal, value: "ACCT1" as any Sendable)
-		await #expect(throws: DBError.self) {
-			try await db.keysInTable(table, sortOrder: nil, conditions: [accountCondition])
-		}
+		let missingKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [accountCondition]))
+		#expect(missingKeys.count == 0, "Condition on an absent property should match nothing")
 
 		let keyCondition = DBCondition(set: 0, objectKey: "key", conditionOperator: .equal, value: "ACCT1" as any Sendable)
 
