@@ -356,20 +356,19 @@ public actor AgileDB {
 	 Asynchronously returns the count of keys in given table.
 
 	  - parameter table: The table to return keys from.
-	  - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 	  - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
 	  - parameter validateObjects: Optional bool. Default value is false.
 
 	  - returns: Int
 	  - throws: DBError
 	  */
-	public func countKeysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> Int {
+	public func countKeysInTable(_ table: DBTable, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> Int {
 
 		let openResults = await openDB()
 		if case .failure(let error) = openResults { throw error }
 		if !tables.hasTable(table) { throw DBError.tableNotFound }
 
-		guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects, getCount: true) else {
+		guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: conditions, validateObjecs: validateObjects, getCount: true) else {
 			throw DBError.cannotParseData
 		}
 
@@ -393,7 +392,6 @@ public actor AgileDB {
 	Asynchronously returns the count of keys in the given table via a completion closure.
 
 	- parameter table: The table to return keys from.
-	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 	- parameter conditions: Optional array of DBConditions.
 	- parameter validateObjects: Optional bool. Default value is false.
 	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
@@ -402,7 +400,7 @@ public actor AgileDB {
 	- returns: DBCommandToken that can be used to cancel the command before it executes.
 	*/
 	@discardableResult
-	public func countKeysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping @Sendable (IntResults) -> Void) -> DBCommandToken? {
+	public func countKeysInTable(_ table: DBTable, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping @Sendable (IntResults) -> Void) -> DBCommandToken? {
 
 		let openResults = openDB_sync()
 		if case .failure = openResults {
@@ -417,7 +415,7 @@ public actor AgileDB {
 
 		// keysInTableSQL needs actor isolation; run async and capture the token
 		Task {
-			guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects, getCount: true) else {
+			guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: conditions, validateObjecs: validateObjects, getCount: true) else {
 				(queue ?? .main).async { completion(.failure(.cannotParseData)) }
 				return
 			}

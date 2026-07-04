@@ -230,6 +230,42 @@ do {
 }
 ```
 
+Return the count of keys in a given table instead of loading the keys themselves. Accepts the same ```conditions`, and `validateObjects` parameters as `keysInTable.`
+```swift
+let table: DBTable = "accounts"
+do {
+    let count = try await AgileDB.shared.countKeysInTable(table)
+    // use count
+} catch {
+    // handle error
+}
+```
+
+Count keys matching conditions.
+```swift
+let table: DBTable = "accounts"
+let accountCondition = DBCondition(set:0,objectKey:"account", conditionOperator:.equal, value:"ACCT1")
+do {
+    let count = try await AgileDB.shared.countKeysInTable(table, conditions: [accountCondition])
+    // use count
+} catch {
+    // handle error
+}
+```
+
+A completion closure-based version is also available. Since AgileDB is an actor, the call itself still requires `await`, but the count is delivered to the completion closure rather than being awaited directly; a `DBCommandToken` is returned so the command can be cancelled before it executes.
+```swift
+let table: DBTable = "accounts"
+let token = await AgileDB.shared.countKeysInTable(table) { results in
+    switch results {
+    case .success(let count):
+        // use count
+    case .failure(let error):
+        // handle error
+    }
+}
+```
+
 
 
 ### Values ###
@@ -302,6 +338,7 @@ do {
 - tableHasKey
 - tableHasAllKeys
 - keysInTable
+- countKeysInTable
 - valueFromTable
 - dictValueFromTable
 - sqlSelect
@@ -421,6 +458,7 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
     
 # Revision History
 ### 7.0 ###
+- New method: `countKeysInTable`, with async/await and completion closure variants, returns the count of keys in a table matching the given conditions without loading the keys themselves.
 - Objects are now stored as a single JSON document in each table's `value` column (rather than one physical column per property plus a side table for arrays). Direct SQL `select` statements must reference properties with `json_extract(value, '$.property')`; use `json_each` to join across array-of-key relationships, or declare indexes with `setIndexesForTable(_:to:)` to expose properties as named, indexed columns.
 - AgileDB is now implemented as a Swift `actor` and is fully Swift 6 language-mode compliant.
 - Asynchronous (async/await) methods are now the primary API. Most low-level methods are `async`, and those that can fail are `async throws`.
