@@ -106,6 +106,24 @@ struct Person: DBObject {
 	var lastName = "Manaager"
 }
 
+final class RestrictedPublishingObject: DBObject, @unchecked Sendable {
+	static let table: DBTable = "RestrictedPublishingObject"
+
+	var key = UUID().uuidString
+	var publishedName = "Public Name"
+	var publishedCount = 5
+	var internalNotes: String? = "Should not be stored"
+	var internalFlag: Bool? = true
+
+	private enum PublishedKey: String, CodingKey {
+		case key, publishedName, publishedCount
+	}
+
+	var codingKeys: [CodingKey] {
+		[PublishedKey.key, PublishedKey.publishedName, PublishedKey.publishedCount]
+	}
+}
+
 @Suite("Database Object Tests")
 struct DBObjectTests {
 	@Test("Save object to database")
@@ -235,6 +253,30 @@ struct DBObjectTests {
 		#expect(transaction.amount == encodingTransaction.amount)
 		#expect(encodingTransaction.locations.count == 3)
 		#expect(encodingTransaction.locations[0].manager.firstName == "Store")
+
+		await removeDB(db)
+	}
+
+	@Test("codingKeys restricts which properties are stored")
+	func testCodingKeysRestrictsStoredProperties() async throws {
+		let db = dbForTesting()
+
+		let object = RestrictedPublishingObject()
+		await object.save(to: db)
+
+		let storedDict = try await db.dictValueFromTable(RestrictedPublishingObject.table, for: object.key)
+
+		#expect(storedDict.count == 2)
+		#expect(storedDict["publishedName"] as? String == object.publishedName)
+		#expect(storedDict["publishedCount"] as? Int == object.publishedCount)
+		#expect(storedDict["internalNotes"] == nil)
+		#expect(storedDict["internalFlag"] == nil)
+
+		let loadedObject = try await RestrictedPublishingObject.load(from: db, for: object.key)
+		#expect(loadedObject.publishedName == object.publishedName)
+		#expect(loadedObject.publishedCount == object.publishedCount)
+		#expect(loadedObject.internalNotes == nil)
+		#expect(loadedObject.internalFlag == nil)
 
 		await removeDB(db)
 	}

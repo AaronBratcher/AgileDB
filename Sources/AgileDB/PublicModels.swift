@@ -10,6 +10,7 @@ import Foundation
 
 public typealias BoolResults = Result<Bool, DBError>
 public typealias KeyResults = Result<[String], DBError>
+public typealias IntResults = Result<Int, DBError>
 public typealias RowResults = Result<[DBRow], DBError>
 public typealias JsonResults = Result<String, DBError>
 public typealias DictResults = Result<[String: any Sendable], DBError>
@@ -42,7 +43,7 @@ extension DBTable: CustomStringConvertible {
 /**
 DBCommandToken is returned by asynchronous methods. Call the token's cancel method to cancel the command before it executes.
 */
-public struct DBCommandToken {
+public struct DBCommandToken: Sendable {
 	private let database: AgileDB
 	private let identifier: UInt
 

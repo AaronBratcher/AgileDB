@@ -412,5 +412,123 @@ struct BasicTests {
 
 		await removeDB(db)
 	}
+
+	@Test("Count keys in table")
+	func testCountKeysInTable() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "countTable1"
+		let sample = "{\"numValue\":2,\"arrayValue\":[6,7,8,9,10]}"
+
+		await db.setValueInTable(table, for: "testKey1", to: sample, autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: sample, autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: sample, autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey4", to: sample, autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey5", to: sample, autoDeleteAfter: nil)
+
+		let count = try await db.countKeysInTable(table)
+		#expect(count == 5)
+
+		await removeDB(db)
+	}
+
+	@Test("Count keys in table with conditions")
+	func testCountKeysInTableWithConditions() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "countTable2"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":2,\"account\":\"TEST1\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":3,\"account\":\"TEST2\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey4", to: "{\"numValue\":4,\"account\":\"TEST3\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":5,\"account\":\"ACCT3\"}", autoDeleteAfter: nil)
+
+		let condition = DBCondition(set: 0, objectKey: "account", conditionOperator: .contains, value: "ACCT" as any Sendable)
+		let count = try await db.countKeysInTable(table, conditions: [condition])
+		#expect(count == 2)
+
+		let emptyConditionCount = try await db.countKeysInTable(table, conditions: [])
+		#expect(emptyConditionCount == 5)
+
+		await removeDB(db)
+	}
+
+	@Test("Count keys in empty table")
+	func testCountKeysInEmptyTable() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "countTable3"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1}", autoDeleteAfter: nil)
+		#expect(await db.deleteFromTable(table, for: "testKey1"), "deletion failed")
+
+		let count = try await db.countKeysInTable(table)
+		#expect(count == 0)
+
+		await removeDB(db)
+	}
+
+	@Test("Count keys in dropped table throws tableNotFound")
+	func testCountKeysInTableNotFound() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "countTable4"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1}", autoDeleteAfter: nil)
+		await db.dropTable("countTable4")
+
+		await #expect(throws: DBError.tableNotFound) {
+			try await db.countKeysInTable(table)
+		}
+
+		await removeDB(db)
+	}
+
+	@Test("Count keys in table via completion closure")
+	func testCountKeysInTableCompletion() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "countTable5"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1,\"account\":\"ACCT1\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"numValue\":2,\"account\":\"TEST1\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"numValue\":3,\"account\":\"TEST2\"}", autoDeleteAfter: nil)
+
+		let result: IntResults = await withCheckedContinuation { continuation in
+			Task {
+				_ = await db.countKeysInTable(table) { results in
+					continuation.resume(returning: results)
+				}
+			}
+		}
+
+		switch result {
+		case .success(let count): #expect(count == 3)
+		case .failure(let error): Issue.record("unexpected error: \(error)")
+		}
+
+		await removeDB(db)
+	}
+
+	@Test("Count keys in dropped table via completion closure returns tableNotFound")
+	func testCountKeysInTableCompletionNotFound() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "countTable6"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"numValue\":1}", autoDeleteAfter: nil)
+		await db.dropTable("countTable6")
+
+		let result: IntResults = await withCheckedContinuation { continuation in
+			Task {
+				_ = await db.countKeysInTable(table) { results in
+					continuation.resume(returning: results)
+				}
+			}
+		}
+
+		switch result {
+		case .success: Issue.record("expected tableNotFound error")
+		case .failure(let error): #expect(error == DBError.tableNotFound)
+		}
+
+		await removeDB(db)
+	}
 }
 

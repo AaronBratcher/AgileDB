@@ -351,6 +351,97 @@ public actor AgileDB {
 		return publisher
 	}
 
+	// MARK: - Count of keys
+	/**
+	 Asynchronously returns the count of keys in given table.
+
+	  - parameter table: The table to return keys from.
+	  - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
+	  - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
+	  - parameter validateObjects: Optional bool. Default value is false.
+
+	  - returns: Int
+	  - throws: DBError
+	  */
+	public func countKeysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> Int {
+
+		let openResults = await openDB()
+		if case .failure(let error) = openResults { throw error }
+		if !tables.hasTable(table) { throw DBError.tableNotFound }
+
+		guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects, getCount: true) else {
+			throw DBError.cannotParseData
+		}
+
+		let rowResults: RowResults = await withCheckedContinuation { continuation in
+			_ = dbCore.sqlSelect(sql) { continuation.resume(returning: $0) }
+		}
+
+		switch rowResults {
+		case .success(let rows):
+			guard let countRow = rows.first, let keyCount = countRow.values[0] as? Int else {
+				throw DBError.cannotParseData
+			}
+
+			return keyCount
+
+		case .failure(let error): throw error
+		}
+	}
+
+	/**
+	Asynchronously returns the count of keys in the given table via a completion closure.
+
+	- parameter table: The table to return keys from.
+	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
+	- parameter conditions: Optional array of DBConditions.
+	- parameter validateObjects: Optional bool. Default value is false.
+	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
+	- parameter completion: Closure with IntResults.
+
+	- returns: DBCommandToken that can be used to cancel the command before it executes.
+	*/
+	@discardableResult
+	public func countKeysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping @Sendable (IntResults) -> Void) -> DBCommandToken? {
+
+		let openResults = openDB_sync()
+		if case .failure = openResults {
+			completion(.failure(.cannotOpenFile))
+			return nil
+		}
+
+		if !tables.hasTable(table) {
+			completion(.failure(.tableNotFound))
+			return DBCommandToken(database: self, identifier: 0)
+		}
+
+		// keysInTableSQL needs actor isolation; run async and capture the token
+		Task {
+			guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects, getCount: true) else {
+				(queue ?? .main).async { completion(.failure(.cannotParseData)) }
+				return
+			}
+
+			_ = dbCore.sqlSelect(sql) { rowResults in
+				let dispatchQueue = queue ?? DispatchQueue.main
+				dispatchQueue.async {
+					switch rowResults {
+					case .success(let rows):
+						guard let countRow = rows.first, let keyCount = countRow.values[0] as? Int else {
+							completion(.failure(DBError.cannotParseData))
+							return
+						}
+
+						return completion(.success(keyCount))
+					case .failure(let error): completion(.failure(error))
+					}
+				}
+			}
+		}
+
+		return DBCommandToken(database: self, identifier: 0)
+	}
+
 	// MARK: - Indexing
 	/**
 	Sets the indexes desired for a given table.
@@ -980,11 +1071,11 @@ extension AgileDB {
 
 // MARK: - Internal data handling methods
 extension AgileDB {
-	func keysInTableSQL(table: DBTable, sortOrder: String?, conditions: [DBCondition]?, validateObjecs: Bool, testKey: String? = nil) async -> String? {
+	func keysInTableSQL(table: DBTable, sortOrder: String?, conditions: [DBCondition]?, validateObjecs: Bool, testKey: String? = nil, getCount: Bool = false) async -> String? {
 		// All object properties live in the `value` JSON document, so conditions are
 		// expressed with json_extract / json_each rather than physical columns. There is
 		// no schema to validate against, so `validateObjecs` is intentionally ignored.
-		let selectClause = "select distinct a.key from \(table) a"
+		let selectClause = "select \(getCount ? "count(distinct a.key)": "distinct a.key") from \(table) a"
 
 		var whereClause = ""
 

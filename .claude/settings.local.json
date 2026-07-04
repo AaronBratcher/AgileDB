@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(swift build *)",
+      "Bash(swift --version)",
+      "Bash(xcodegen --version)",
+      "Bash(xcodebuild -version)",
+      "Bash(brew install *)",
+      "Bash(/opt/homebrew/bin/brew install *)",
+      "Bash(find /usr/local/bin /usr/local/opt -name \"brew\" 2>/dev/null | head -3 *)",
+      "Bash(python3 gen_project.py)",
+      "Bash(python3 -c ' *)",
+      "Bash(plutil -lint MyMoney.xcodeproj/project.pbxproj)",
+      "Bash(xcodebuild -project MyMoney.xcodeproj -scheme MyMoney -destination 'platform=iOS Simulator,name=iPhone 16' -configuration Debug build)",
+      "Bash(xcodebuild -project MyMoney.xcodeproj -scheme MyMoney -destination 'platform=iOS Simulator,name=iPhone 16 - iOS 18.6' -configuration Debug build)",
+      "Bash(xcodebuild -project MyMoney.xcodeproj -scheme MyMoney -destination 'id=E3F373F7-7256-4E5D-BFFE-D74EE84F322C' -configuration Debug build)",
+      "Bash(uuidgen)",
+      "Bash(xcodebuild -project TrociabkVoice.xcodeproj -scheme TrociabkVoice -configuration Debug build CODE_SIGN_IDENTITY=\"\" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO)",
+      "Bash(mkdir -p /Users/aaronlbratcher/Downloads/PizzaUI/Sources/PizzaUI/Resources)",
+      "Bash(cp -r /Users/aaronlbratcher/Downloads/Pizza/JoesPizza/Assets.xcassets/Card /Users/aaronlbratcher/Downloads/PizzaUI/Sources/PizzaUI/Resources/PizzaUI.xcassets/Card)",
+      "Bash(cp -r /Users/aaronlbratcher/Downloads/Pizza/JoesPizza/Assets.xcassets/Text/Colors /Users/aaronlbratcher/Downloads/PizzaUI/Sources/PizzaUI/Resources/PizzaUI.xcassets/Text/Colors)",
+      "Bash(cp -r /Users/aaronlbratcher/Downloads/Pizza/JoesPizza/Assets.xcassets/Text/Styles.dataset /Users/aaronlbratcher/Downloads/PizzaUI/Sources/PizzaUI/Resources/PizzaUI.xcassets/Text/Styles.dataset)",
+      "Bash(cp -r /Users/aaronlbratcher/Downloads/Pizza/JoesPizza/Assets.xcassets/Timer /Users/aaronlbratcher/Downloads/PizzaUI/Sources/PizzaUI/Resources/PizzaUI.xcassets/Timer)",
+      "Bash(xcodebuild -scheme PizzaUI -destination 'generic/platform=iOS')",
+      "Bash(xcodebuild -list -project \"LPF Gen.xcodeproj\")",
+      "Bash(xcodebuild -project \"LPF Gen.xcodeproj\" -scheme \"LPF Gen\" -destination \"generic/platform=iOS\" -configuration Debug build)",
+      "Bash(xcodebuild -project \"LPF Gen.xcodeproj\" -scheme \"LPF Gen\" -destination \"platform=iOS Simulator,name=iPad Pro 13-inch \\(M4\\)\" -configuration Debug CODE_SIGNING_ALLOWED=NO build)",
+      "Bash(xcrun simctl *)",
+      "Bash(xcodebuild -project \"LPF Gen.xcodeproj\" -scheme \"LPF Gen\" -destination \"platform=iOS Simulator,id=B6F9A955-5625-43BA-9C73-A632DEDA4914\" -configuration Debug CODE_SIGNING_ALLOWED=NO build)",
+      "Bash(python3 -c \"import PIL; print\\(PIL.__version__\\)\")",
+      "Bash(python3 -c \"import importlib; print\\(importlib.util.find_spec\\('PIL'\\)\\)\")",
+      "Bash(python3 -c \"from PIL import Image; print\\('ok'\\)\")",
+      "Bash(swift gen_icon.swift)",
+      "Bash(qlmanage -t -s 512 -o /tmp \"/Users/aaronlbratcher/Downloads/LPF Gen/LPF Gen/Assets.xcassets/AppIcon.appiconset/AppIcon.png\")",
+      "Read(//private/tmp/**)",
+      "Bash(grep -r \"glassEffect\\\\|GlassEffect\\\\|\\\\.glass\" /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/SwiftUI.framework/Modules/SwiftUI.swiftmodule/ 2>/dev/null | grep -i \"func glassEffect\\\\|var glass\\\\b\\\\|struct Glass\" | head -20)",
+      "Bash(find /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/SwiftUI.framework -name \"*.swiftinterface\" 2>/dev/null | head -3)",
+      "Bash(grep -i \"glassEffect\\\\|GlassEffect\\\\| Glass\\\\b\\\\|struct Glass\\\\b\\\\|\\\\.glass\\\\b\" /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/SwiftUICore.framework/Modules/SwiftUICore.swiftmodule/arm64e-apple-ios.swiftinterface 2>/dev/null | grep -v \"^//\" | head -40)"
+    ]
+  }
+}

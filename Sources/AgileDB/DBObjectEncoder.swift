@@ -16,7 +16,14 @@ class DBObjectEncoder: Encoder {
 
 	var dbDict: DBDict = [:]
 
+	// Non-nil restricts encoding to these key names. Populated from the DBObject's
+	// codingKeys when non-empty; nil means encode everything (default behavior).
+	fileprivate var allowedKeys: Set<String>?
+
 	func encode(dbObject: DBObject) throws -> DBDict {
+		let codingKeys = dbObject.codingKeys
+		allowedKeys = codingKeys.isEmpty ? nil : Set(codingKeys.map { $0.stringValue })
+
 		try dbObject.encode(to: self)
 		return dbDict
 	}
@@ -43,15 +50,31 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 		self.encoder = encoder
 	}
 
+	// The "key" property is stored separately as the row's key, not in the value
+	// dictionary, and codingKeys (when non-empty) restricts everything else.
+	private func isEncodable(_ key: K) -> Bool {
+		if key.stringValue == "key" { return false }
+		if let allowedKeys = encoder.allowedKeys {
+			return allowedKeys.contains(key.stringValue)
+		}
+
+		return true
+	}
+
+	private func store(_ value: any Sendable, forKey key: K) {
+		guard isEncodable(key) else { return }
+		encoder.dbDict[key.stringValue] = value
+	}
+
 	func encodeNil(forKey key: K) throws { }
 
 	func encode(_ value: Bool, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as any Sendable
+		store(value as any Sendable, forKey: key)
 	}
 
 	func encodeDate(_ date: Date, forKey key: K) throws {
 		let dateString = AgileDB.stringValueForDate(date)
-		encoder.dbDict[key.stringValue] = dateString as any Sendable
+		store(dateString as any Sendable, forKey: key)
 	}
 
 	func encodeDateArray(_ dateArray: [Date], forKey key: K) throws {
@@ -61,11 +84,11 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 			dateStrings.append(dateString)
 		}
 
-		encoder.dbDict[key.stringValue] = dateStrings as any Sendable
+		store(dateStrings as any Sendable, forKey: key)
 	}
 
 	func encodeDBObject(_ dbObject: DBObject, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = dbObject.key as any Sendable
+		store(dbObject.key as any Sendable, forKey: key)
 	}
 
 	func encodeDBObjectArray(_ dbObjects: [DBObject], forKey key: K) throws {
@@ -74,51 +97,50 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 			objectKeys.append(dbObject.key)
 		}
 
-		encoder.dbDict[key.stringValue] = objectKeys as any Sendable
+		store(objectKeys as any Sendable, forKey: key)
 	}
 
 	func encode(_ value: String, forKey key: K) throws {
-		if key.stringValue == "key" { return }
-		encoder.dbDict[key.stringValue] = value as any Sendable
+		store(value as any Sendable, forKey: key)
 	}
 
 	func encodeStringArray(_ value: [String], forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as any Sendable
+		store(value as any Sendable, forKey: key)
 	}
 
 	func encodeIntArray(_ value: [Int], forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as any Sendable
+		store(value as any Sendable, forKey: key)
 	}
 
 	func encodeDoubleArray(_ value: [Double], forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as any Sendable
+		store(value as any Sendable, forKey: key)
 	}
 
 	func encode(_ value: Double, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as any Sendable
+		store(value as any Sendable, forKey: key)
 	}
 
 	func encode(_ value: Float, forKey key: K) throws { }
 
 	func encode(_ value: Int, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = value as any Sendable
+		store(value as any Sendable, forKey: key)
 	}
 
 	func encode(_ value: Int8, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = Int(value) as any Sendable
+		store(Int(value) as any Sendable, forKey: key)
 	}
 
 	func encode(_ value: Int16, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = Int(value) as any Sendable
+		store(Int(value) as any Sendable, forKey: key)
 	}
 
 	func encode(_ value: Int32, forKey key: K) throws {
-		encoder.dbDict[key.stringValue] = Int(value) as any Sendable
+		store(Int(value) as any Sendable, forKey: key)
 	}
 
 	func encode(_ value: Data, forKey key: K) throws {
 		// Data is not JSON-serializable; persist as a base64 string in the value document.
-		encoder.dbDict[key.stringValue] = value.base64EncodedString() as any Sendable
+		store(value.base64EncodedString() as any Sendable, forKey: key)
 	}
 
 	func encode(_ value: Int64, forKey key: K) throws { }
