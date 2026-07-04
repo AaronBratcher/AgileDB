@@ -124,6 +124,19 @@ final class RestrictedPublishingObject: DBObject, @unchecked Sendable {
 	}
 }
 
+@Model(table: "MacroWidget")
+final class MacroWidget: @unchecked Sendable {
+	var name = "Widget Name"
+	var count = 5
+	@Transient var internalNotes: String = "Should not be stored"
+	@Transient var internalFlag: Bool = true
+}
+
+@Model
+final class MacroDerivedTableModel: @unchecked Sendable {
+	var name = "Derived"
+}
+
 @Suite("Database Object Tests")
 struct DBObjectTests {
 	@Test("Save object to database")
@@ -279,5 +292,34 @@ struct DBObjectTests {
 		#expect(loadedObject.internalFlag == nil)
 
 		await removeDB(db)
+	}
+
+	@Test("Model macro conforms to DBObject and only stores non-ignored properties")
+	func testModelMacroRestrictsStoredProperties() async throws {
+		let db = dbForTesting()
+
+		let object = MacroWidget()
+		await object.save(to: db)
+
+		let storedDict = try await db.dictValueFromTable(MacroWidget.table, for: object.key)
+
+		#expect(storedDict.count == 2)
+		#expect(storedDict["name"] as? String == object.name)
+		#expect(storedDict["count"] as? Int == object.count)
+		#expect(storedDict["internalNotes"] == nil)
+		#expect(storedDict["internalFlag"] == nil)
+
+		let loadedObject = try await MacroWidget.load(from: db, for: object.key)
+		#expect(loadedObject.name == object.name)
+		#expect(loadedObject.count == object.count)
+		#expect(loadedObject.internalNotes == "Should not be stored")
+		#expect(loadedObject.internalFlag == true)
+
+		await removeDB(db)
+	}
+
+	@Test("Model macro derives table name from type name when omitted")
+	func testModelMacroDerivesTableName() {
+		#expect(MacroDerivedTableModel.table == DBTable(name: "MacroDerivedTableModel"))
 	}
 }

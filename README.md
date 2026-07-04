@@ -103,6 +103,32 @@ await category.delete(from: db)
 
 ```
 
+## Model Macro ##
+`@Model` generates the `DBObject` boilerplate shown above for a class or struct: `DBObject` conformance, the `key` property (if not already declared), `static var table`, and a `codingKeys` implementation. Mark any properties that shouldn't be persisted with `@Transient`; everything else is included.
+
+```swift
+@Model(table: Table.categories)
+struct Category {
+    var accountKey = ""
+    var name = ""
+    var inSummary = true
+    @Transient var isNew = true // not saved to the database
+}
+```
+is equivalent to the hand-written `Category` above, plus excluding `isNew` from what's persisted.
+
+`@Transient` properties don't need to be Optional. When at least one property is marked `@Transient`, the macro generates the `CodingKeys` enum under that exact name, which the Swift compiler recognizes specially: any stored property left out of `CodingKeys` is skipped entirely during decode and keeps its own declared default value instead of requiring the key to be present. Because of this, a non-optional `@Transient` property must have a default value (`= true`, `= 0`, `= ""`, etc.) — without one, the type won't compile as `Decodable`.
+
+The `table` argument is optional. If omitted, the table name is derived from the type's own name:
+```swift
+@Model
+final class Widget: @unchecked Sendable {
+    var name = ""
+}
+// Widget.table == DBTable(name: "Widget")
+```
+Since table names are effectively part of the on-disk schema, prefer passing `table:` explicitly for any model where the type name might later change, or where the table already exists under a different name.
+
 ## DBResults Class
 - Works with DBObject elements
 - Instantiate the class with a reference to the database and the keys
@@ -457,6 +483,9 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+### 8.0 ###
+- New `@Model` macro generates `DBObject` conformance, `key`, `table`, and `codingKeys` for a class or struct; pair with `@Transient` on individual properties to exclude them from persistence.
+
 ### 7.0 ###
 - New method: `countKeysInTable`, with async/await and completion closure variants, returns the count of keys in a table matching the given conditions without loading the keys themselves.
 - Objects are now stored as a single JSON document in each table's `value` column (rather than one physical column per property plus a side table for arrays). Direct SQL `select` statements must reference properties with `json_extract(value, '$.property')`; use `json_each` to join across array-of-key relationships, or declare indexes with `setIndexesForTable(_:to:)` to expose properties as named, indexed columns.
