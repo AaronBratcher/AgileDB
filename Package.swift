@@ -26,6 +26,7 @@ let package = Package(
 				.product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
 				.product(name: "SwiftDiagnostics", package: "swift-syntax"),
 				.product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+				.product(name: "SwiftOperators", package: "swift-syntax"),
 			]
 		),
 		.target(

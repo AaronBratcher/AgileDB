@@ -129,6 +129,62 @@ final class Widget: @unchecked Sendable {
 ```
 Since table names are effectively part of the on-disk schema, prefer passing `table:` explicitly for any model where the type name might later change, or where the table already exists under a different name.
 
+## Predicate Macro ##
+`#Predicate<T> { ... }` builds a `DBPredicate<T>` — a typed wrapper around `[DBCondition]` — from a single-expression closure, the same way SwiftData's `#Predicate` builds a `Predicate<T>`.
+
+```swift
+let predicate = #Predicate<Account> { $0.type == .checking && $0.balance > 0 }
+// predicate.conditions is a [DBCondition] usable with keysInTable, countKeysInTable, or publisher
+```
+
+Supported inside the closure:
+- Comparisons `==`, `!=`, `<`, `>`, `<=`, `>=` between a property path (`$0.property` or `$0.nested.property`) and a value, in either order
+- `$0.property.contains(value)` for array/string properties (`.contains`)
+- `array.contains($0.property)` for membership checks (`.inList`)
+- `&&` and `||` combining any number of the above, including mixed nesting — each `&&`-joined group becomes one condition `set` (ANDed), and `||` starts a new set (ORed), matching `DBCondition`'s own set-based semantics
+
+```swift
+// (type == .checking || type == .savings) && balance > 0
+let predicate = #Predicate<Account> {
+    ($0.type == .checking || $0.type == .savings) && $0.balance > 0
+}
+```
+
+`#Predicate` only understands this specific set of forms — it doesn't evaluate the closure or resolve types, since it runs entirely at compile time over the closure's syntax. Anything else (`!`, `??`, multi-statement closures, arbitrary function calls) produces a compile-time error rather than unexpected runtime behavior.
+
+## Query Property Wrapper ##
+`@Query` fetches `DBObject`s and keeps the result current — modeled directly on SwiftData's `@Query`, right down to reading its database from `@Environment(\.modelContext).`
+
+```swift
+@main
+struct MyApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(\.modelContext, AgileDB.shared)
+        }
+    }
+}
+
+struct ContentView: View {
+    @Query(filter: #Predicate<Account> { $0.balance > 0 }, sort: "name")
+    var accounts: [Account]
+
+    var body: some View {
+        List(accounts) { account in
+            Text(account.name)
+        }
+    }
+}
+```
+
+- Set the database once with `.environment(\.modelContext, myDB)` on a parent view; every `@Query` beneath it reads from that value. If it's never set, `@Query` falls back to `AgileDB.shared`.
+- `filter` takes a `DBPredicate<T>` built with `#Predicate`; omit it to fetch everything in the table.
+- `sort` is the same comma-delimited property-name string used elsewhere in AgileDB (e.g. `"name"` or `"date desc"`), rather than SwiftData's `SortDescriptor`.
+- Results start empty and load asynchronously, then refresh automatically both once the initial load completes and whenever the underlying table changes — it's built directly on `publisher()`, so it shares that same live-update behavior.
+
+`@Query` is a `DynamicProperty` backed by `@StateObject` and `@Environment`, so — exactly like SwiftData's `@Query` — it only resolves its database and establishes its live-updating identity once it's a stored property of a `View` that SwiftUI is actually rendering; it isn't meaningfully usable or testable by constructing it directly outside of one.
+
 ## DBResults Class
 - Works with DBObject elements
 - Instantiate the class with a reference to the database and the keys
@@ -484,6 +540,7 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
     
 # Revision History
 ### 8.0 ###
+- New `@Query` property wrapper and `#Predicate<T> { ... }` macro, modeled on SwiftData's, for fetching and filtering `DBObject`s in SwiftUI; set the database once via `.environment(\.modelContext, myDB)`.
 - New `@Model` macro generates `DBObject` conformance, `key`, `table`, and `codingKeys` for a class or struct; pair with `@Transient` on individual properties to exclude them from persistence.
 
 ### 7.0 ###

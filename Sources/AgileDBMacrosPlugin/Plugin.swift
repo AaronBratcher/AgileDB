@@ -11,5 +11,6 @@ struct AgileDBMacrosPluginProvider: CompilerPlugin {
 	let providingMacros: [Macro.Type] = [
 		ModelMacro.self,
 		TransientMacro.self,
+		PredicateMacro.self,
 	]
 }
