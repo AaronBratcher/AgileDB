@@ -27,22 +27,27 @@ let package = Package(
 				.product(name: "SwiftDiagnostics", package: "swift-syntax"),
 				.product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
 				.product(name: "SwiftOperators", package: "swift-syntax"),
-			]
+			],
+			path: "AgileDBMacrosPlugin/"
 		),
 		.target(
 			name: "AgileDB",
 			dependencies: ["AgileDBMacrosPlugin"],
+			path: "AgileDB/"
 		),
 		.testTarget(
 			name: "AgileDBTests",
-			dependencies: ["AgileDB"]),
+			dependencies: ["AgileDB"],
+			path: "Tests/AgileDBTests/"
+		),
 		.testTarget(
 			name: "AgileDBMacrosPluginTests",
 			dependencies: [
 				"AgileDBMacrosPlugin",
 				.product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
 				.product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
-			]
+			],
+			path: "Tests/AgileDBMacrosPluginTests/"
 		),
 	]
 )
