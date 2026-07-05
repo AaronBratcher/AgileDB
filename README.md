@@ -11,12 +11,10 @@
 - Include all .swift source files in your project
 
 ## Getting Started ##
-- The easiest way to use AgileDB is to create a class or struct that adheres to the DBObject Protocol. These entities will automatically be `Codable`. Encoded values are saved to the database. (See below for supported value types)
+- The easiest way to use AgileDB is to create a class or struct that complies to the DBObject Protocol. These entities will automatically be `Codable`. Encoded values are saved to the database. (See below for supported value types)
 - Alternately, you can use low level methods that work from a JSON dictionary. Supported types in the JSON node are String, Int, Double, Bool, [String], [Int], [Double].
-- For any method that returns an optional, that value is nil if an error occured and could not return a proper value.
-
 ## DBObject Protocol ##
-- DBbjects can have the following types saved and read to the DB: DBObject, Int, Double, String, Date, Bool, Dictionary, Codable Struct [DBObject], [Int], [Double], [String], [Date], [Dictionary], [Codable Struct]. All properties may be optional. For DBObject properties, the key is stored so the referenced objects can be edited and saved independently
+- DBbjects can have the following types saved and read to the database: DBObject, Int, Double, String, Date, Bool, Dictionary, Codable Struct [DBObject], [Int], [Double], [String], [Date], [Dictionary], [Codable Struct]. All properties may be optional. For saved DBObject properties, the key is stored so the referenced objects can be edited and saved independently
 - Bool properties read from the database will be interpreted as follows: An integer 0 = false and any other number is true. For string values "1", "yes", "YES", "true", and "TRUE" evaluate to true.
 
 ### Protocol Definition ###
