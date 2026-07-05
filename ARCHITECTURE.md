@@ -272,6 +272,8 @@ updates automatically as matching data changes.
 
 ---
 
+### All macros are currently in beta ###
+
 ## Macros (`AgileDBMacrosPlugin`)
 
 Compile-time macros, implemented as a `SwiftCompilerPlugin` in the sibling

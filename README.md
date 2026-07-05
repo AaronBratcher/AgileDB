@@ -128,6 +128,8 @@ struct Account: DBObject {
 ```
 Types that never override `currentSchemaVersion` (the default, `1`) or `convertToCurrentSchema` behave exactly as before — this is purely additive.
 
+### All macros are currently in beta ###
+
 ## Model Macro ##
 `@Model` generates the `DBObject` boilerplate shown above for a class or struct: `DBObject` conformance, the `key` property (if not already declared), `static var table`, and a `codingKeys` implementation. Mark any properties that shouldn't be persisted with `@Transient`; everything else is included.
 
