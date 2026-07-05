@@ -6,8 +6,9 @@ string key in a named table, with the object body serialized as a JSON document 
 `json_extract`/`json_each`, and selected properties can be promoted to indexed virtual
 columns. The framework is fully `async`/`await` based and concurrency-safe under Swift 6.
 
-This document summarizes the **public-facing API surface** of the framework and its
-three principal supporting types: `DBObject`, `DBResults`, and `DBResultsPublisher`.
+This document summarizes the **public-facing API surface** of the framework: its
+three principal supporting types (`DBObject`, `DBResults`, and `DBResultsPublisher`) and
+the `@Model`/`@Transient`/`#Predicate`/`@Query` macros that are build on top of them.
 
 ## Component overview
 
@@ -18,6 +19,7 @@ three principal supporting types: `DBObject`, `DBResults`, and `DBResultsPublish
 | `DBResults` | An `AsyncSequence` of `DBObject`s, backed by a list of keys that are loaded lazily on demand. |
 | `DBResultsPublisher` | A Combine `Publisher` that emits `DBResults` and re-emits whenever the underlying query results change. |
 | Public models | `DBTable`, `DBCondition`, `DBConditionOperator`, `DBRow`, `DBError`, `DBCommandToken`, and the `Result` typealiases in `PublicModels.swift`. |
+| Macros (`AgileDBMacrosPlugin`) | `@Model`, `@Transient`, `#Predicate`, and `@Query` — compile-time helpers that remove `DBObject` boilerplate and add SwiftData-style querying. |
 
 ## Storage model
 
@@ -33,8 +35,7 @@ create table <table> (
 )
 ```
 
-- The `key` and the three date columns are real columns; **all other object properties
-  live inside the `value` JSON document**.
+- The `key` and the three date columns are real columns; **all other object properties live inside the `value` JSON document**.
 - Writes are a single-row UPSERT (`on conflict(key) do update …`), making each save atomic.
 - Conditions and sort orders are translated to `json_extract(value, '$.field')`
   expressions. The `contains` operator resolves at query time via `json_type`: array
@@ -83,6 +84,8 @@ create table <table> (
 | `func tableHasAllKeys(table:keys:queue:completion:) -> DBCommandToken?` | Closure-based variant. |
 | `func keysInTable(_:sortOrder:conditions:validateObjects:) async throws -> [String]` | Keys matching optional sort order and conditions. |
 | `func keysInTable(_:sortOrder:conditions:validateObjects:queue:completion:) -> DBCommandToken?` | Closure-based variant. |
+| `func countKeysInTable(_:conditions:validateObjects:) async throws -> Int` | Count of keys matching optional conditions, without loading them. |
+| `func countKeysInTable(_:conditions:validateObjects:queue:completion:) -> DBCommandToken?` | Closure-based variant. |
 | `func hasTable(_:) async -> Bool` | Whether the table exists. |
 
 ### Indexing
@@ -154,8 +157,11 @@ gain database persistence keyed by `key`.
 ```swift
 public protocol DBObject: Codable, Sendable {
     static var table: DBTable { get }
+    static var currentSchemaVersion: Int { get }   // default: 1
     var key: String { get set }
     var codingKeys: [CodingKey] { get }   // default: [] (encode all properties)
+
+    static func convertToCurrentSchema(_ dictValue: [String: any Sendable], from schemaVersion: Int) -> [String: any Sendable]
 }
 ```
 
@@ -164,13 +170,14 @@ public protocol DBObject: Codable, Sendable {
 | Member | Description |
 | --- | --- |
 | `var codingKeys: [CodingKey]` | Defaults to `[]`, meaning all properties are encoded. |
+| `static var currentSchemaVersion: Int` | Defaults to `1`. |
+| `static func convertToCurrentSchema(_:from:)` | Defaults to returning the dictionary unchanged. |
 | `init?(db: AgileDB, key: String) async` | Load an instance by key; `nil` if missing or undecodable. |
 | `static func load(from: AgileDB, for key: String) async throws -> Self` | Load an instance by key; throws `DBError` on failure. |
 | `func save(to: AgileDB, autoDeleteAfter: Date? = nil, saveNestedObjects: Bool = true) async -> Bool` | Persist the object (and, by default, nested `DBObject`s and arrays of them). |
 | `func delete(from: AgileDB) async -> Bool` | Delete the object (does not delete nested objects). |
 | `var jsonValue: String?` | Full JSON encoding of the object (dates use `AgileDB.dateFormatter`). |
 | `var dictValue: [String: any Sendable]?` | Dictionary used for storage; **nested `DBObject`s are referenced by key only, not embedded**. |
-| `static func loadObjectFromDB(_:for:queue:completion:) -> DBCommandToken?` | **Deprecated** — use `await load` instead. |
 
 ### Nested-object handling
 
@@ -180,6 +187,18 @@ a decode pass that encounters a not-yet-loaded nested object records the miss an
 the missing dictionaries are then fetched asynchronously from the database and cached, and
 the decode is retried until it succeeds. This lets a synchronous `Codable` decode pull in
 asynchronously-loaded nested objects.
+
+### Schema versioning
+
+`DBObjectEncoder` stamps every saved dictionary with a `schemaVersion` field (the encoding
+type's `currentSchemaVersion`), outside the normal `Codable`/`codingKeys` path — the same
+treatment `key` gets, just in the opposite direction (added rather than stripped). On load,
+both decode entry points (`DBObject.dbObjectWithDict` for top-level loads, and
+`DictKeyedContainer.decodeNested` for nested objects) read back `schemaVersion` (missing
+means `1`, for rows saved before this existed) and, if the type's `currentSchemaVersion` is
+greater, run it through `convertToCurrentSchema` before decoding. The conversion is a plain,
+synchronous `[String: any Sendable] -> [String: any Sendable]` transform — no DB access — so
+it composes with the existing nested-object retry loop without changes.
 
 ---
 
@@ -253,6 +272,83 @@ updates automatically as matching data changes.
 
 ---
 
+## Macros (`AgileDBMacrosPlugin`)
+
+Compile-time macros, implemented as a `SwiftCompilerPlugin` in the sibling
+`AgileDBMacrosPlugin` target, that remove `DBObject` boilerplate and add SwiftData-style
+querying.
+
+### `@Model(table:)`
+
+Attached to a `struct`/`class`. Conforms it to `DBObject` (via an `@attached(extension)`)
+and synthesizes members (`@attached(member)`):
+
+| Generated | When |
+| --- | --- |
+| `var key = UUID().uuidString` | Unless the type already declares its own `key` |
+| `static var table: DBTable` | From the `table:` argument, or `DBTable(name: "<TypeName>")` if omitted |
+| `codingKeys: [CodingKey]` (plus a `CodingKeys` enum) | Only emitted if at least one property is `@Transient`, so `Codable` synthesis skips it entirely |
+
+```swift
+@Model(table: Table.categories)
+public struct MoneyCategory: Sendable {
+    public var name = "Unspecified"
+    @Transient public var isNew = true
+}
+```
+
+### `@Transient`
+
+Marker-only `@attached(peer)` macro with no expansion of its own — `@Model` looks for it
+while walking a type's stored properties and excludes that property from `codingKeys`
+(and therefore from persistence and decoding).
+
+### `#Predicate<T> { ... }`
+
+`@freestanding(expression)` macro. Parses a single boolean closure over `$0` into a
+`DBPredicate<T>` — a typed wrapper around `[DBCondition]` (see `DBPredicate.swift`) — for
+use with `@Query`'s `filter:`, or read `.conditions` directly for `keysInTable`,
+`countKeysInTable`, or `publisher`.
+
+Supported inside the closure:
+- Comparisons `==`, `!=`, `<`, `>`, `<=`, `>=` between a property path (`$0.property` or
+  `$0.nested.property`) and a value, in either order
+- `$0.property.contains(value)` for array/string properties, and `array.contains($0.property)`
+  for membership checks
+- `&&`/`||` combining any number of the above, expanded to `DBCondition`'s set-based AND/OR
+  form: each `&&`-joined group becomes one condition `set` (ANDed); `||` starts a new set
+  (ORed against the others).
+
+```swift
+let predicate = #Predicate<Account> { $0.type == .checking && $0.balance > 0 }
+```
+
+### `@Query(filter:sort:validateObjects:)`
+
+SwiftUI-only (gated behind `#if canImport(SwiftUI)`), modeled on SwiftData's `@Query`.
+Conforms to `DynamicProperty` and reads the database from `@Environment(\.modelContext)`
+(a new `EnvironmentValues` member this macro adds, defaulting to `AgileDB.shared`).
+
+```swift
+ContentView()
+    .environment(\.modelContext, AgileDB.shared)
+
+struct ContentView: View {
+    @Query(filter: #Predicate<Account> { $0.balance > 0 }, sort: "name")
+    var accounts: [Account]
+}
+```
+
+Internally, the wrapper holds a private `@StateObject` box (`QueryBox`) so the subscription
+survives view-struct re-creation. `DynamicProperty.update()` — called by SwiftUI before every
+`body` evaluation — lazily starts the box's `DBResultsPublisher` subscription exactly once
+(guarded so repeated `update()` calls are no-ops); each emitted `DBResults` is drained into a
+plain array and published, so `accounts` starts empty and refreshes both once the initial
+load completes and on every subsequent change, the same as subscribing to `publisher()`
+directly.
+
+---
+
 ## Supporting public models (`PublicModels.swift`)
 
 | Type | Description |
@@ -265,6 +361,7 @@ updates automatically as matching data changes.
 | `enum DBError` | `cannotWriteToFile`, `diskError`, `damagedFile`, `cannotOpenFile`, `tableNotFound`, `cannotParseData`, `other(Int)`. `RawRepresentable` by `Int`. |
 | `typealias BoolResults` | `Result<Bool, DBError>` |
 | `typealias KeyResults` | `Result<[String], DBError>` |
+| `typealias IntResults` | `Result<Int, DBError>` |
 | `typealias RowResults` | `Result<[DBRow], DBError>` |
 | `typealias JsonResults` | `Result<String, DBError>` |
 | `typealias DictResults` | `Result<[String: any Sendable], DBError>` |

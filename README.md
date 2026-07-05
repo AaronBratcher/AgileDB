@@ -23,11 +23,15 @@
 ```swift
 public protocol DBObject: Codable, Sendable {
     static var table: DBTable { get }
+    static var currentSchemaVersion: Int { get }
     var key: String { get set }
     var codingKeys: [CodingKey] { get }
+
+    static func convertToCurrentSchema(_ dictValue: [String: any Sendable], from schemaVersion: Int) -> [String: any Sendable]
 }
 ```
 - `codingKeys` has a default implementation that returns an empty array, encoding all of the object's properties. Provide your own implementation to limit which properties are encoded.
+- `currentSchemaVersion` defaults to `1`. `convertToCurrentSchema` has a default implementation that returns `dictValue` unchanged. See **Schema Versioning** below.
 
 ### Protocol methods ###
 ```swift
@@ -102,6 +106,29 @@ guard let category = await Category(db: db, key: categoryKey) else { return }
 await category.delete(from: db)
 
 ```
+
+### Schema Versioning ###
+Every save stamps the stored dictionary with the type's `currentSchemaVersion`. When loading data saved under an older version, `convertToCurrentSchema` is called automatically with the raw stored dictionary and the version it was saved with, and its return value is what actually gets decoded — including for nested `DBObject`s loaded as part of a parent. Rows saved before this feature existed have no version stored at all, which is treated the same as version `1`.
+
+```swift
+struct Account: DBObject {
+    static var table: DBTable { Table.accounts }
+    static var currentSchemaVersion: Int { 2 }
+
+    var key = UUID().uuidString
+    var name = ""
+    var isActive = true // added in schema version 2
+
+    static func convertToCurrentSchema(_ dictValue: [String: any Sendable], from schemaVersion: Int) -> [String: any Sendable] {
+        var dictValue = dictValue
+        if schemaVersion < 2 {
+            dictValue["isActive"] = true // rows saved before version 2 default to active
+        }
+        return dictValue
+    }
+}
+```
+Types that never override `currentSchemaVersion` (the default, `1`) or `convertToCurrentSchema` behave exactly as before — this is purely additive.
 
 ## Model Macro ##
 `@Model` generates the `DBObject` boilerplate shown above for a class or struct: `DBObject` conformance, the `key` property (if not already declared), `static var table`, and a `codingKeys` implementation. Mark any properties that shouldn't be persisted with `@Transient`; everything else is included.
@@ -542,6 +569,7 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ### 8.0 ###
 - New `@Query` property wrapper and `#Predicate<T> { ... }` macro, modeled on SwiftData's, for fetching and filtering `DBObject`s in SwiftUI; set the database once via `.environment(\.modelContext, myDB)`.
 - New `@Model` macro generates `DBObject` conformance, `key`, `table`, and `codingKeys` for a class or struct; pair with `@Transient` on individual properties to exclude them from persistence.
+- DBObject gained schema versioning: `currentSchemaVersion` (default `1`) and `convertToCurrentSchema(_:from:)` (default: returns the dictionary unchanged). When loading data saved under an older version, `convertToCurrentSchema` runs automatically, for both top-level and nested objects.
 
 ### 7.0 ###
 - New method: `countKeysInTable`, with async/await and completion closure variants, returns the count of keys in a table matching the given conditions without loading the keys themselves.

@@ -25,6 +25,7 @@ class DBObjectEncoder: Encoder {
 		allowedKeys = codingKeys.isEmpty ? nil : Set(codingKeys.map { $0.stringValue })
 
 		try dbObject.encode(to: self)
+		dbDict["schemaVersion"] = type(of: dbObject).currentSchemaVersion as any Sendable
 		return dbDict
 	}
 

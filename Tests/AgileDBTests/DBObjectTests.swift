@@ -137,6 +137,30 @@ final class MacroDerivedTableModel: @unchecked Sendable {
 	var name = "Derived"
 }
 
+struct VersionedChild: DBObject {
+	static let table: DBTable = "VersionedChild"
+	static let currentSchemaVersion = 2
+
+	var key = UUID().uuidString
+	var label = "Child"
+	var isActive = true // added in schema version 2
+
+	static func convertToCurrentSchema(_ dictValue: [String: any Sendable], from schemaVersion: Int) -> [String: any Sendable] {
+		var dictValue = dictValue
+		if schemaVersion < 2 {
+			dictValue["isActive"] = true
+		}
+		return dictValue
+	}
+}
+
+struct VersionedParent: DBObject {
+	static let table: DBTable = "VersionedParent"
+
+	var key = UUID().uuidString
+	var child: VersionedChild
+}
+
 @Suite("Database Object Tests")
 struct DBObjectTests {
 	@Test("Save object to database")
@@ -279,7 +303,7 @@ struct DBObjectTests {
 
 		let storedDict = try await db.dictValueFromTable(RestrictedPublishingObject.table, for: object.key)
 
-		#expect(storedDict.count == 2)
+		#expect(storedDict.count == 3) // + schemaVersion
 		#expect(storedDict["publishedName"] as? String == object.publishedName)
 		#expect(storedDict["publishedCount"] as? Int == object.publishedCount)
 		#expect(storedDict["internalNotes"] == nil)
@@ -303,7 +327,7 @@ struct DBObjectTests {
 
 		let storedDict = try await db.dictValueFromTable(MacroWidget.table, for: object.key)
 
-		#expect(storedDict.count == 2)
+		#expect(storedDict.count == 3) // + schemaVersion
 		#expect(storedDict["name"] as? String == object.name)
 		#expect(storedDict["count"] as? Int == object.count)
 		#expect(storedDict["internalNotes"] == nil)
@@ -321,5 +345,56 @@ struct DBObjectTests {
 	@Test("Model macro derives table name from type name when omitted")
 	func testModelMacroDerivesTableName() {
 		#expect(MacroDerivedTableModel.table == DBTable(name: "MacroDerivedTableModel"))
+	}
+
+	@Test("Default schema version is 1")
+	func testDefaultSchemaVersion() {
+		#expect(Transaction.currentSchemaVersion == 1)
+	}
+
+	@Test("Saving stamps the current schema version")
+	func testSaveStampsSchemaVersion() async throws {
+		let db = dbForTesting()
+
+		let child = VersionedChild()
+		await child.save(to: db)
+
+		let storedDict = try await db.dictValueFromTable(VersionedChild.table, for: child.key)
+		#expect(storedDict["schemaVersion"] as? Int == 2)
+
+		await removeDB(db)
+	}
+
+	@Test("Loading data saved under an older schema converts it on the way in")
+	func testLoadConvertsOlderSchema() async throws {
+		let db = dbForTesting()
+
+		// Simulate a row saved before `isActive` existed: no `isActive`, no `schemaVersion`
+		// at all (predates the feature, so it should be treated as version 1).
+		let legacyKey = UUID().uuidString
+		await db.setValueInTable(VersionedChild.table, for: legacyKey, to: ["label": "Legacy"])
+
+		let loaded = try await VersionedChild.load(from: db, for: legacyKey)
+		#expect(loaded.label == "Legacy")
+		#expect(loaded.isActive == true)
+
+		await removeDB(db)
+	}
+
+	@Test("Nested objects are converted from an older schema too")
+	func testNestedObjectConvertsOlderSchema() async throws {
+		let db = dbForTesting()
+
+		let childKey = UUID().uuidString
+		await db.setValueInTable(VersionedChild.table, for: childKey, to: ["label": "Nested Legacy", "schemaVersion": 1])
+
+		let parentKey = UUID().uuidString
+		await db.setValueInTable(VersionedParent.table, for: parentKey, to: ["child": childKey])
+
+		let loadedParent = try await VersionedParent.load(from: db, for: parentKey)
+		#expect(loadedParent.child.label == "Nested Legacy")
+		#expect(loadedParent.child.isActive == true)
+
+		await removeDB(db)
 	}
 }

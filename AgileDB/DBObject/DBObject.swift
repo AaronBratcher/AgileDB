@@ -10,8 +10,21 @@ import Foundation
 
 public protocol DBObject: Codable, Sendable {
 	static var table: DBTable { get }
+	static var currentSchemaVersion: Int { get }
 	var key: String { get set }
 	var codingKeys: [CodingKey] { get }
+
+	/**
+	Converts a dictionary saved under an older schema version to the current schema. Called
+	automatically during decoding when `currentSchemaVersion` is greater than the version the
+	data was saved with.
+
+	- parameter dictValue: The stored dictionary, as saved under `schemaVersion`.
+	- parameter schemaVersion: The schema version `dictValue` was saved with.
+
+	- returns: A dictionary compatible with `currentSchemaVersion`.
+	*/
+	static func convertToCurrentSchema(_ dictValue: [String: any Sendable], from schemaVersion: Int) -> [String: any Sendable]
 }
 
 extension DBObject {
@@ -20,6 +33,20 @@ extension DBObject {
 	 */
 	public var codingKeys: [CodingKey] {
 		return []
+	}
+
+	/**
+	 Default schema version is 1.
+	 */
+	public static var currentSchemaVersion: Int {
+		return 1
+	}
+
+	/**
+	 Default implementation performs no conversion.
+	 */
+	public static func convertToCurrentSchema(_ dictValue: [String: any Sendable], from schemaVersion: Int) -> [String: any Sendable] {
+		return dictValue
 	}
 
 	/**
@@ -99,31 +126,14 @@ extension DBObject {
 		return dbObject
 	}
 
-	/**
-	Asynchronously instantiate object and populate with values from the database before executing the passed block with object.
-
-	- parameter db: Database object to hold the data.
-	- parameter key: Key of the data entry.
-	- parameter queue: DispatchQueue to run the execution block on. Default value is nil specifying the main queue.
-	- parameter block: Block of code to execute with instantiated object.
-
-	- returns: nil (deprecated — use await load instead)
-	*/
-	@available(*, deprecated, message: "Use await load instead")
-	@discardableResult
-	public static func loadObjectFromDB(_ db: AgileDB, for key: String, queue: DispatchQueue? = nil, completion: @escaping @Sendable (Self) -> Void) -> DBCommandToken? {
-		Task {
-			if let dictionaryValue = try? await db.dictValueFromTable(table, for: key),
-			   let dbObject = await dbObjectWithDict(dictionaryValue, db: db, for: key) {
-				(queue ?? .main).async { completion(dbObject) }
-			}
-		}
-		return nil
-	}
-
 	private static func dbObjectWithDict(_ dictionaryValue: [String: any Sendable], db: AgileDB, for key: String) async -> Self? {
 		var dictionaryValue = dictionaryValue
 		dictionaryValue["key"] = key as any Sendable
+
+		let savedSchemaVersion = (dictionaryValue["schemaVersion"] as? Int) ?? 1
+		if currentSchemaVersion > savedSchemaVersion {
+			dictionaryValue = convertToCurrentSchema(dictionaryValue, from: savedSchemaVersion)
+		}
 
 		// Nested DBObjects are stored only by key. Decoding is synchronous but loading a
 		// nested object requires `await`, so decode in a loop: each pass that encounters

@@ -161,6 +161,12 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	private func decodeNested(_ type: DBObject.Type, dict: [String: any Sendable], key: String) throws -> DBObject {
 		var nestedDict = dict
 		nestedDict["key"] = key
+
+		let savedSchemaVersion = (nestedDict["schemaVersion"] as? Int) ?? 1
+		if type.currentSchemaVersion > savedSchemaVersion {
+			nestedDict = type.convertToCurrentSchema(nestedDict, from: savedSchemaVersion)
+		}
+
 		let nestedDecoder = DBObjectDecoder(nestedDict, db: db, state: state)
 		return try type.init(from: nestedDecoder)
 	}
@@ -168,6 +174,10 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 	func decode(_ type: Bool.Type, forKey key: K) throws -> Bool {
 		guard let value = dict[key.stringValue] else {
 			throw DictDecoderError.missingValueForKey(key.stringValue)
+		}
+
+		if let boolValue = value as? Bool {
+			return boolValue
 		}
 
 		if let intValue = value as? Int {
