@@ -82,10 +82,10 @@ create table <table> (
 | `func tableHasAllKeys(table:keys:) async throws -> Bool` | Whether a table contains all given keys. |
 | `func tableHasKey(table:key:queue:completion:) -> DBCommandToken?` | Closure-based variant; returns a cancellation token. |
 | `func tableHasAllKeys(table:keys:queue:completion:) -> DBCommandToken?` | Closure-based variant. |
-| `func keysInTable(_:sortOrder:conditions:validateObjects:) async throws -> [String]` | Keys matching optional sort order and conditions. |
-| `func keysInTable(_:sortOrder:conditions:validateObjects:queue:completion:) -> DBCommandToken?` | Closure-based variant. |
-| `func countKeysInTable(_:conditions:validateObjects:) async throws -> Int` | Count of keys matching optional conditions, without loading them. |
-| `func countKeysInTable(_:conditions:validateObjects:queue:completion:) -> DBCommandToken?` | Closure-based variant. |
+| `func keysInTable(_:sortOrder:conditions:) async throws -> [String]` | Keys matching optional sort order and conditions. |
+| `func keysInTable(_:sortOrder:conditions:queue:completion:) -> DBCommandToken?` | Closure-based variant. |
+| `func countKeysInTable(_:conditions:) async throws -> Int` | Count of keys matching optional conditions, without loading them. |
+| `func countKeysInTable(_:conditions:queue:completion:) -> DBCommandToken?` | Closure-based variant. |
 | `func hasTable(_:) async -> Bool` | Whether the table exists. |
 
 ### Indexing
@@ -120,7 +120,7 @@ entry once that time passes. Successful writes/deletes notify any matching publi
 
 | Member | Description |
 | --- | --- |
-| `func publisher<T>(sortOrder:conditions:validateObjects:) -> DBResultsPublisher<T>` | Create a Combine publisher of `DBResults<T>` for `T.table`. |
+| `func publisher<T>(sortOrder:conditions:) -> DBResultsPublisher<T>` | Create a Combine publisher of `DBResults<T>` for `T.table`. |
 
 ### Syncing
 
@@ -258,8 +258,8 @@ public class DBResultsPublisher<T: DBObject>: Publisher, Identifiable, @unchecke
 Behavior:
 
 - On the **first** subscription it kicks off an asynchronous fetch via
-  `AgileDB.keysInTable(...)` using the publisher's stored `sortOrder`/`conditions`/
-  `validateObjects`, then emits the resulting `DBResults<T>`.
+  `AgileDB.keysInTable(...)` using the publisher's stored `sortOrder`/`conditions`,
+  then emits the resulting `DBResults<T>`.
 - The internal `CurrentValueSubject`'s initial empty seed is dropped so subscribers receive
   the first *real* fetch result, not the placeholder.
 - The owning `AgileDB` actor tracks live publishers and calls `updateSubject()` on those
@@ -325,7 +325,7 @@ Supported inside the closure:
 let predicate = #Predicate<Account> { $0.type == .checking && $0.balance > 0 }
 ```
 
-### `@Query(filter:sort:validateObjects:)`
+### `@Query(filter:sort:)`
 
 SwiftUI-only (gated behind `#if canImport(SwiftUI)`), modeled on SwiftData's `@Query`.
 Conforms to `DynamicProperty` and reads the database from `@Environment(\.modelContext)`

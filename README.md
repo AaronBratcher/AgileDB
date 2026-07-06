@@ -1,14 +1,17 @@
 # AgileDB
-
-- A SQLite database wrapper written in Swift that requires no SQL knowledge to use.
-- No need to keep track of columns used in the database; it's automatic.
+- A low latency thread-safe key/value SQLite database wrapper written in Swift that requires no SQL knowledge to use.
+- No need to keep track of columns used in the database; it's automatic. 
 - Completely thread safe. AgileDB is implemented as a Swift `actor` and is fully Swift 6 concurrency compliant.
 - Built around Async/Await
 - Use the publisher method to work with Combine and SwiftUI
 
-## Installation Options ##
-- Swift Package Manager (Recommended)
-- Include all .swift source files in your project
+## Installation  ##
+include AgileDB as a dependency in your Package.swift file:
+```swift
+dependencies: [
+   .package(url: "https://github.com/AaronBratcher/AgileDB", from: "8.0.0")
+]
+```
 
 ## Getting Started ##
 - The easiest way to use AgileDB is to create a class or struct that complies to the DBObject Protocol. These entities will automatically be `Codable`. Encoded values are saved to the database. (See below for supported value types)
@@ -246,7 +249,6 @@ Returns a  Publisher for generic DBResults. Uses the table of the DBObject for r
 
 - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
 
 - returns: DBResultssPublisher
 */
@@ -320,12 +322,11 @@ do {
 - parameter table: The DBTable to return keys from.
 - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-- parameter validateObjects: Optional bool that condition sets will be validated against the table. Any set that refers to json objects that do not exist in the table will be ignored. Default value is false.
 
 - returns: [String] Returns an array of keys from the table.
 - throws: DBError when the database could not be opened or another error occurred.
 
-public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> [String]
+public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil) async throws -> [String]
 */
 
 
@@ -339,7 +340,7 @@ do {
 }
 ```
 
-Return the count of keys in a given table instead of loading the keys themselves. Accepts the same ```conditions`, and `validateObjects` parameters as `keysInTable.`
+Return the count of keys in a given table instead of loading the keys themselves. Accepts the same `conditions` parameter as `keysInTable.`
 ```swift
 let table: DBTable = "accounts"
 do {
@@ -570,6 +571,7 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 - New `@Query` property wrapper and `#Predicate<T> { ... }` macro, modeled on SwiftData's, for fetching and filtering `DBObject`s in SwiftUI; set the database once via `.environment(\.modelContext, myDB)`.
 - New `@Model` macro generates `DBObject` conformance, `key`, `table`, and `codingKeys` for a class or struct; pair with `@Transient` on individual properties to exclude them from persistence.
 - DBObject gained schema versioning: `currentSchemaVersion` (default `1`) and `convertToCurrentSchema(_:from:)` (default: returns the dictionary unchanged). When loading data saved under an older version, `convertToCurrentSchema` runs automatically, for both top-level and nested objects.
+- Removed the `validateObjects` parameter from `keysInTable`, `countKeysInTable`, and `publisher`. Since 7.0's move to JSON-document storage there was no table schema left to validate condition sets against, so the parameter had been silently ignored; it's now gone from the API entirely.
 
 ### 7.0 ###
 - New method: `countKeysInTable`, with async/await and completion closure variants, returns the count of keys in a table matching the given conditions without loading the keys themselves.

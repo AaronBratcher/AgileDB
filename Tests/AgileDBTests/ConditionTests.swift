@@ -96,8 +96,8 @@ struct ConditionTests {
 		await removeDB(db)
 	}
 
-	@Test("Validate objects")
-	func validateObjects() async throws {
+	@Test("Multiple condition sets")
+	func multipleConditionSets() async throws {
 		let db = dbForTesting()
 
 		let table: DBTable = "Transactions"
@@ -120,7 +120,7 @@ struct ConditionTests {
 		conditions.append(DBCondition(set: 1, objectKey: "accountKey", conditionOperator: .equal, value: "Checking" as any Sendable))
 		conditions.append(DBCondition(set: 1, objectKey: "note", conditionOperator: .equal, value: "Kroger" as any Sendable))
 
-		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: conditions, validateObjects: true))
+		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: conditions))
 		#expect(keys.count == 1)
 
 		await removeDB(db)

@@ -157,7 +157,7 @@ struct PublisherTests {
 			var key = UUID().uuidString
 			var value = 0
 		}
-		let publisher = await db.publisher(sortOrder: nil, conditions: nil, validateObjects: false) as DBResultsPublisher<TestObj>
+		let publisher = await db.publisher(sortOrder: nil, conditions: nil) as DBResultsPublisher<TestObj>
 
 		// DBResults is a key cursor whose objects must be loaded asynchronously, so
 		// capture each emitted result set and materialize values via object(at:).

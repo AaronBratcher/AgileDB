@@ -13,7 +13,6 @@ protocol UpdatablePublisher {
 	var id: UUID { get }
 	var table: DBTable { get }
 	var conditions: [DBCondition]? { get }
-	var validateObjects: Bool { get }
 
 	func updateSubject()
 	func clearResults(in table: DBTable)
@@ -26,7 +25,6 @@ public class DBResultsPublisher<T: DBObject>: UpdatablePublisher, Identifiable, 
 	public let id = UUID()
 	let table: DBTable
 	let conditions: [DBCondition]?
-	let validateObjects: Bool
 
 	private let subject: CurrentValueSubject<DBResults<T>, Failure>
 	private let subscriptionLock = NSLock()
@@ -34,12 +32,11 @@ public class DBResultsPublisher<T: DBObject>: UpdatablePublisher, Identifiable, 
 	private let db: AgileDB
 	private let sortOrder: String?
 
-	init(db: AgileDB, table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) {
+	init(db: AgileDB, table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil) {
 		self.db = db
 		self.table = table
 		self.sortOrder = sortOrder
 		self.conditions = conditions
-		self.validateObjects = validateObjects
 		subject = CurrentValueSubject(DBResults(db: db, keys: []))
 	}
 
@@ -75,12 +72,11 @@ extension DBResultsPublisher: Publisher {
 		let db = self.db
 		let sortOrder = self.sortOrder
 		let conditions = self.conditions
-		let validateObjects = self.validateObjects
 		let subject = self.subject
 		let table = self.table
 		Task {
 			do {
-				let keys = try await db.keysInTable(table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
+				let keys = try await db.keysInTable(table, sortOrder: sortOrder, conditions: conditions)
 				let result = DBResults<T>(db: db, keys: keys)
 				subject.send(result)
 			}

@@ -106,7 +106,8 @@ public actor AgileDB {
 	/**
 	Instantiates an instance of AgileDB
 
-	- parameter location: Optional file location if different than the default.
+	- parameter fileLocation: Optional file location if different than the default.
+	- parameter isDebugging: When true, additional debugging output is enabled. Default value is false.
 	*/
 	public init(fileLocation: URL? = nil, isDebugging: Bool = false) {
 		dbFileLocation = fileLocation
@@ -265,17 +266,16 @@ public actor AgileDB {
 	  - parameter table: The table to return keys from.
 	  - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 	  - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-	  - parameter validateObjects: Optional bool. Default value is false.
 
 	  - returns: [String]
 	  - throws: DBError
 	  */
-	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> [String] {
+	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil) async throws -> [String] {
 		let openResults = await openDB()
 		if case .failure(let error) = openResults { throw error }
 		if !tables.hasTable(table) { throw DBError.tableNotFound }
 
-		guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else {
+		guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions) else {
 			throw DBError.cannotParseData
 		}
 
@@ -295,14 +295,13 @@ public actor AgileDB {
 	- parameter table: The table to return keys from.
 	- parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 	- parameter conditions: Optional array of DBConditions.
-	- parameter validateObjects: Optional bool. Default value is false.
 	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
 	- parameter completion: Closure with KeyResults.
 
 	- returns: DBCommandToken that can be used to cancel the command before it executes.
 	*/
 	@discardableResult
-	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping @Sendable (KeyResults) -> Void) -> DBCommandToken? {
+	public func keysInTable(_ table: DBTable, sortOrder: String? = nil, conditions: [DBCondition]? = nil, queue: DispatchQueue? = nil, completion: @escaping @Sendable (KeyResults) -> Void) -> DBCommandToken? {
 		let openResults = openDB_sync()
 		if case .failure = openResults {
 			completion(.failure(.cannotOpenFile))
@@ -316,7 +315,7 @@ public actor AgileDB {
 
 		// keysInTableSQL needs actor isolation; run async and capture the token
 		Task {
-			guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions, validateObjecs: validateObjects) else {
+			guard let sql = await keysInTableSQL(table: table, sortOrder: sortOrder, conditions: conditions) else {
 				(queue ?? .main).async { completion(.failure(.cannotParseData)) }
 				return
 			}
@@ -340,13 +339,12 @@ public actor AgileDB {
 
 	 - parameter sortOrder: Optional string that gives a comma delimited list of properties to sort by.
 	 - parameter conditions: Optional array of DBConditions.
-	 - parameter validateObjects: Default value is false.
 
 	 - returns: DBResultsPublisher
 	 */
 	@discardableResult
-	public func publisher<T>(sortOrder: String? = nil, conditions: [DBCondition]? = nil, validateObjects: Bool = false) -> DBResultsPublisher<T> {
-		let publisher = DBResultsPublisher<T>(db: self, table: T.table, sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
+	public func publisher<T>(sortOrder: String? = nil, conditions: [DBCondition]? = nil) -> DBResultsPublisher<T> {
+		let publisher = DBResultsPublisher<T>(db: self, table: T.table, sortOrder: sortOrder, conditions: conditions)
 		publishers.append(publisher)
 		return publisher
 	}
@@ -357,18 +355,17 @@ public actor AgileDB {
 
 	  - parameter table: The table to return keys from.
 	  - parameter conditions: Optional array of DBConditions that specify what conditions must be met.
-	  - parameter validateObjects: Optional bool. Default value is false.
 
 	  - returns: Int
 	  - throws: DBError
 	  */
-	public func countKeysInTable(_ table: DBTable, conditions: [DBCondition]? = nil, validateObjects: Bool = false) async throws -> Int {
+	public func countKeysInTable(_ table: DBTable, conditions: [DBCondition]? = nil) async throws -> Int {
 
 		let openResults = await openDB()
 		if case .failure(let error) = openResults { throw error }
 		if !tables.hasTable(table) { throw DBError.tableNotFound }
 
-		guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: conditions, validateObjecs: validateObjects, getCount: true) else {
+		guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: conditions, getCount: true) else {
 			throw DBError.cannotParseData
 		}
 
@@ -393,14 +390,13 @@ public actor AgileDB {
 
 	- parameter table: The table to return keys from.
 	- parameter conditions: Optional array of DBConditions.
-	- parameter validateObjects: Optional bool. Default value is false.
 	- parameter queue: Optional dispatch queue to use when running the completion closure. Default value is main queue.
 	- parameter completion: Closure with IntResults.
 
 	- returns: DBCommandToken that can be used to cancel the command before it executes.
 	*/
 	@discardableResult
-	public func countKeysInTable(_ table: DBTable, conditions: [DBCondition]? = nil, validateObjects: Bool = false, queue: DispatchQueue? = nil, completion: @escaping @Sendable (IntResults) -> Void) -> DBCommandToken? {
+	public func countKeysInTable(_ table: DBTable, conditions: [DBCondition]? = nil, queue: DispatchQueue? = nil, completion: @escaping @Sendable (IntResults) -> Void) -> DBCommandToken? {
 
 		let openResults = openDB_sync()
 		if case .failure = openResults {
@@ -415,7 +411,7 @@ public actor AgileDB {
 
 		// keysInTableSQL needs actor isolation; run async and capture the token
 		Task {
-			guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: conditions, validateObjecs: validateObjects, getCount: true) else {
+			guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: conditions, getCount: true) else {
 				(queue ?? .main).async { completion(.failure(.cannotParseData)) }
 				return
 			}
@@ -1053,7 +1049,7 @@ extension AgileDB {
 		var matchingPublishers = [UpdatablePublisher]()
 
 		for publisher in publishers where publisher.table == table {
-			guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: publisher.conditions, validateObjecs: publisher.validateObjects, testKey: key) else { continue }
+			guard let sql = await keysInTableSQL(table: table, sortOrder: nil, conditions: publisher.conditions, testKey: key) else { continue }
 
 			guard let results = await sqlRows(sql) else { continue }
 
@@ -1069,10 +1065,9 @@ extension AgileDB {
 
 // MARK: - Internal data handling methods
 extension AgileDB {
-	func keysInTableSQL(table: DBTable, sortOrder: String?, conditions: [DBCondition]?, validateObjecs: Bool, testKey: String? = nil, getCount: Bool = false) async -> String? {
+	func keysInTableSQL(table: DBTable, sortOrder: String?, conditions: [DBCondition]?, testKey: String? = nil, getCount: Bool = false) async -> String? {
 		// All object properties live in the `value` JSON document, so conditions are
-		// expressed with json_extract / json_each rather than physical columns. There is
-		// no schema to validate against, so `validateObjecs` is intentionally ignored.
+		// expressed with json_extract / json_each rather than physical columns.
 		let selectClause = "select \(getCount ? "count(distinct a.key)": "distinct a.key") from \(table) a"
 
 		var whereClause = ""

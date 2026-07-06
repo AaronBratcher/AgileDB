@@ -56,13 +56,11 @@ public struct Query<T: DBObject>: DynamicProperty, @unchecked Sendable {
 
 	private let conditions: [DBCondition]?
 	private let sortOrder: String?
-	private let validateObjects: Bool
 
 	@MainActor
-	public init(filter: DBPredicate<T>? = nil, sort sortOrder: String? = nil, validateObjects: Bool = false) {
+	public init(filter: DBPredicate<T>? = nil, sort sortOrder: String? = nil) {
 		self.conditions = filter?.conditions
 		self.sortOrder = sortOrder
-		self.validateObjects = validateObjects
 	}
 
 	@MainActor
@@ -79,7 +77,7 @@ public struct Query<T: DBObject>: DynamicProperty, @unchecked Sendable {
 	// MainActor-isolated box and @Environment value on that guarantee.
 	public nonisolated func update() {
 		MainActor.assumeIsolated {
-			box.configure(db: db, conditions: conditions, sortOrder: sortOrder, validateObjects: validateObjects)
+			box.configure(db: db, conditions: conditions, sortOrder: sortOrder)
 		}
 	}
 }
@@ -92,7 +90,7 @@ private final class QueryBox<T: DBObject>: ObservableObject, @unchecked Sendable
 
 	/// `update()` is called before every body evaluation, so this only does real work once —
 	/// on the first call, once the environment's `db` is actually available.
-	func configure(db: AgileDB, conditions: [DBCondition]?, sortOrder: String?, validateObjects: Bool) {
+	func configure(db: AgileDB, conditions: [DBCondition]?, sortOrder: String?) {
 		guard cancellable == nil else { return }
 
 		// A placeholder subscription so a second `configure` call within the same run loop
@@ -100,7 +98,7 @@ private final class QueryBox<T: DBObject>: ObservableObject, @unchecked Sendable
 		cancellable = AnyCancellable {}
 
 		Task { [weak self] in
-			let publisher: DBResultsPublisher<T> = await db.publisher(sortOrder: sortOrder, conditions: conditions, validateObjects: validateObjects)
+			let publisher: DBResultsPublisher<T> = await db.publisher(sortOrder: sortOrder, conditions: conditions)
 			guard let self else { return }
 
 			self.cancellable = publisher.sink(
