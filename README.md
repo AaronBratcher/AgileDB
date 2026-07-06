@@ -9,7 +9,7 @@
 include AgileDB as a dependency in your Package.swift file:
 ```swift
 dependencies: [
-   .package(url: "https://github.com/AaronBratcher/AgileDB", from: "8.0.0")
+   .package(url: "https://github.com/AaronBratcher/AgileDB", from: "8.1.0")
 ]
 ```
 
