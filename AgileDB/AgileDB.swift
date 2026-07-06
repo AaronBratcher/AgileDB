@@ -2,7 +2,7 @@
 // AgileDB.swift
 //
 // Created by Aaron Bratcher on 01/08/2015.
-// Copyright (c) 2015 – 2020 Aaron L Bratcher. All rights reserved.
+// Copyright (c) 2015 – 2026 Aaron L Bratcher. All rights reserved.
 //
 
 import Foundation

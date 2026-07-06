@@ -3,7 +3,7 @@
 //  AgileDB
 //
 //  Created by Aaron Bratcher  on 4/25/19.
-//  Copyright © 2019 Aaron Bratcher. All rights reserved.
+//  Copyright © 2019 – 2026 Aaron Bratcher. All rights reserved.
 //
 
 import Foundation
