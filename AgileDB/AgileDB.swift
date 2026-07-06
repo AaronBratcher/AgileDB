@@ -616,11 +616,15 @@ public actor AgileDB {
 		}
 
 		let dbTables = tables.allTables()
+
+		await sqlExecute("BEGIN")
 		for table in dbTables {
 			if !(await dropTable(table)) {
+				await sqlExecute("ROLLBACK")
 				return false
 			}
 		}
+		await sqlExecute("COMMIT")
 
 		tables.dropAllTables()
 
@@ -646,7 +650,10 @@ public actor AgileDB {
 
 		if syncingEnabled { return true }
 
+		guard await sqlExecute("BEGIN") else { return false }
+
 		if !(await sqlExecute("create table __synclog(timestamp text, sourceDB text, originalDB text, tableName text, activity text, key text)")) {
+			await sqlExecute("ROLLBACK")
 			return false
 		}
 		await sqlExecute("create index __synclog_index on __synclog(tableName,key)")
@@ -657,10 +664,12 @@ public actor AgileDB {
 		let dbTables = tables.allTables()
 		for table in dbTables {
 			if !(await sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) select '\(now)','\(dbInstanceKey)','\(dbInstanceKey)','\(table.name)','U',key from \(table.name)")) {
+				await sqlExecute("ROLLBACK")
 				return false
 			}
 		}
 
+		await sqlExecute("COMMIT")
 		syncingEnabled = true
 		return true
 	}
@@ -827,6 +836,10 @@ public actor AgileDB {
 					let logEntries = objectValues["logEntries"] as! [[String: any Sendable]]
 					let lastSequence = objectValues["lastSequence"] as! Int
 					var index = 0
+
+					// Wrapping the whole batch in one transaction turns what would be one
+					// commit per log entry into a single commit for the entire sync file.
+					await sqlExecute("BEGIN")
 					for entry in logEntries {
 						index += 1
 						if index % 20 == 0 {
@@ -866,6 +879,8 @@ public actor AgileDB {
 							await sqlExecute("insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(tableName)','X',NULL)")
 						}
 					}
+
+					await sqlExecute("COMMIT")
 
 					for publisher in publishers {
 						publisher.updateSubject()
@@ -1260,12 +1275,9 @@ extension AgileDB {
 
 		guard let jsonString = jsonString(from: documentValues) else { return false }
 
-		// Determine prior existence so the sync log can prune superseded entries, and so
-		// the original addedDateTime is preserved on update.
-		guard let existing = await sqlRows("select 1 from \(table) where key = '\(esc(key))'") else { return false }
-		let tableHasKey = existing.isNotEmpty
-
 		// A single-row UPSERT makes the write atomic without a sidecar to keep in sync.
+		// addedDateTime is intentionally omitted from the conflict update, so the original
+		// value is preserved automatically on update rather than needing a prior existence check.
 		let sql = "insert into \(table) (key,addedDateTime,updatedDateTime,autoDeleteDateTime,value)"
 			+ " values('\(esc(key))','\(addedDateTime)','\(updatedDateTime)',\(deleteDateTime),?)"
 			+ " on conflict(key) do update set updatedDateTime='\(updatedDateTime)',autoDeleteDateTime=\(deleteDateTime),value=excluded.value"
@@ -1279,11 +1291,11 @@ extension AgileDB {
 			let logSQL = "insert into __synclog(timestamp, sourceDB, originalDB, tableName, activity, key) values('\(now)','\(sourceDB)','\(originalDB)','\(table)','U','\(esc(key))')"
 
 			if await sqlExecute(logSQL) {
+				// Pruning superseded synclog rows for this key is a no-op when none exist
+				// (e.g. first-time insert), so it can run unconditionally instead of behind
+				// a prior existence check.
 				let lastID = await lastInsertID()
-
-				if tableHasKey {
-					await sqlExecute("delete from __synclog where tableName = '\(table)' and key = '\(self.esc(key))' and rowid < \(lastID)")
-				}
+				await sqlExecute("delete from __synclog where tableName = '\(table)' and key = '\(self.esc(key))' and rowid < \(lastID)")
 			}
 		}
 
@@ -1332,6 +1344,9 @@ extension AgileDB {
 		let openResults = await openDB()
 		if case .failure = openResults { return }
 
+		// Deleting one key at a time (rather than batching into a single transaction) lets
+		// other queued DB requests interleave between deletions instead of waiting behind
+		// one long-held transaction.
 		let now = AgileDB.stringValueForDate(Date())
 		let dbTables = tables.allTables()
 		for table in dbTables {
@@ -1688,7 +1703,11 @@ private extension AgileDB {
 
 		private var sqliteDB: OpaquePointer?
 		private var threadLock = DispatchSemaphore(value: 0)
-		private var queuedBlocks = [ExecutionBlock]()
+		// Two-stack FIFO: newly submitted blocks land in `incomingBlocks`; `main()` drains
+		// from `outgoingBlocks`, refilling it (in reverse) whenever it runs dry. Both ends
+		// are amortized O(1), unlike removeFirst()/insert(at: 0) on a single array.
+		private var incomingBlocks = [ExecutionBlock]()
+		private var outgoingBlocks = [ExecutionBlock]()
 		private var autoCloseTimer: RepeatingTimer?
 		private var dbFilePath = ""
 		private var autoCloseTimeout: TimeInterval = 0
@@ -1878,37 +1897,28 @@ private extension AgileDB {
 			return addBlock(block)
 		}
 
+		/// Removes a not-yet-started queued block by reference. Operates directly under
+		/// `blockQueue`'s lock (the same lock `main()` uses to drain the queue) rather than
+		/// enqueueing a further unit of work — cancellation only makes sense against a block
+		/// that hasn't started executing yet, so there's nothing to hand off to the worker
+		/// thread. If the block has already been dequeued for execution (or already ran),
+		/// this correctly reports failure.
 		func removeExecutionBlock(_ blockReference: UInt, completion: @escaping @Sendable (_ success: Bool) -> Void) {
-			let block = { @Sendable in
-				var blockArrayIndex: Int?
-				for i in 0..<self.queuedBlocks.count {
-					if self.queuedBlocks[i].blockReference == blockReference {
-						blockArrayIndex = i
-						break
-					}
+			let removed = blockQueue.sync { () -> Bool in
+				if let index = outgoingBlocks.firstIndex(where: { $0.blockReference == blockReference }) {
+					outgoingBlocks.remove(at: index)
+					return true
 				}
 
-				if let blockArrayIndex = blockArrayIndex {
-					self.queuedBlocks.remove(at: blockArrayIndex)
-					completion(true)
-				} else {
-					completion(false)
+				if let index = incomingBlocks.firstIndex(where: { $0.blockReference == blockReference }) {
+					incomingBlocks.remove(at: index)
+					return true
 				}
+
+				return false
 			}
 
-			blockQueue.sync {
-				if blockReference > (UInt.max - 5) {
-					self.blockReference = 1
-				} else {
-					self.blockReference += 1
-				}
-
-				let executionBlock = ExecutionBlock(block: block, blockReference: blockReference)
-
-				queuedBlocks.insert(executionBlock, at: 0)
-				threadLock.signal()
-			}
-
+			completion(removed)
 		}
 
 		func sqlExecute(_ sql: String, parameters: [any Sendable], completion: @escaping @Sendable (_ success: Bool) -> Void) -> UInt {
@@ -2008,6 +2018,9 @@ private extension AgileDB {
 		private func addBlock(_ block: @escaping @Sendable () -> Void) -> UInt {
 			var executionBlockReference: UInt = 0
 
+			// A single sync section both assigns the reference and appends the block, so a
+			// second caller's addBlock() can't interleave between the two (which previously
+			// let one call's block be enqueued under another call's reference).
 			blockQueue.sync {
 				if blockReference > (UInt.max - 5) {
 					blockReference = 1
@@ -2015,47 +2028,52 @@ private extension AgileDB {
 					blockReference += 1
 				}
 				executionBlockReference = blockReference
-			}
 
-			blockQueue.async {
-				let executionBlock = ExecutionBlock(block: block, blockReference: self.blockReference)
-
-				self.queuedBlocks.append(executionBlock)
-				self.threadLock.signal()
+				incomingBlocks.append(ExecutionBlock(block: block, blockReference: executionBlockReference))
+				threadLock.signal()
 			}
 
 			return executionBlockReference
+		}
+
+		/// Pops the next block in FIFO order. Must be called while holding `blockQueue`'s lock.
+		private func dequeueBlock() -> ExecutionBlock? {
+			if outgoingBlocks.isEmpty {
+				outgoingBlocks = incomingBlocks.reversed()
+				incomingBlocks.removeAll(keepingCapacity: true)
+			}
+
+			return outgoingBlocks.popLast()
 		}
 
 		override func main() {
 			while true {
 				autoCloseTimer?.suspend()
 
-				if automaticallyClosed {
-					let results = openFile()
-					if case .failure(_) = results {
-						fatalError("Unable to open DB")
+				// Only the dequeue itself needs the lock; running the SQL happens outside it
+				// so submitting new commands isn't blocked for the duration of a query.
+				//
+				// automaticallyClosed is rechecked before *every* block, not just once per
+				// wake cycle: a queued close (from the auto-close timer, whose deadline can
+				// still be overdue from before this cycle's lastActivity was last refreshed)
+				// can land in the same drain batch as a block queued right after it. Without
+				// re-checking here, that later block would run against a nil sqliteDB.
+				while true {
+					if automaticallyClosed {
+						let results = openFile()
+						if case .failure(_) = results {
+							fatalError("Unable to open DB")
+						}
 					}
-				}
 
-				var hasBlocks = false
-				blockQueue.sync {
-					hasBlocks = queuedBlocks.isNotEmpty
-				}
+					let nextBlock: ExecutionBlock? = blockQueue.sync { dequeueBlock() }
+					guard let executionBlock = nextBlock else { break }
 
-				while hasBlocks {
 					if isDebugging {
 						Thread.sleep(forTimeInterval: 0.1)
 					}
 
-					blockQueue.sync {
-						if let executionBlock = queuedBlocks.first {
-							queuedBlocks.removeFirst()
-							executionBlock.block()
-						}
-
-						hasBlocks = queuedBlocks.isNotEmpty
-					}
+					executionBlock.block()
 				}
 
 				lastActivity = Date().timeIntervalSince1970
@@ -2077,6 +2095,12 @@ private extension AgileDB {
 				}
 				return BoolResults.failure(DBError(rawValue: Int(status)))
 			}
+
+			// WAL lets readers proceed without blocking on writers and avoids rollback-journal
+			// fsync overhead; NORMAL synchronous is safe under WAL (still durable across app
+			// crashes, only vulnerable to an OS-level crash losing the last commit).
+			sqlite3_exec(sqliteDB, "PRAGMA journal_mode=WAL", nil, nil, nil)
+			sqlite3_exec(sqliteDB, "PRAGMA synchronous=NORMAL", nil, nil, nil)
 
 			autoCloseTimer?.resume()
 			automaticallyClosed = false
