@@ -18,7 +18,7 @@ public typealias DictResults = Result<[String: any Sendable], DBError>
 /**
 DBTable is used to identify the table data is stored in
 */
-public struct DBTable: Equatable, Sendable {
+public struct DBTable: Equatable, Hashable, Sendable {
 	let name: String
 
 	public init(name: String) {
@@ -91,6 +91,33 @@ public struct DBCondition: @unchecked Sendable {
 
 public struct DBRow: @unchecked Sendable {
 	public var values = [(any Sendable)?]()
+}
+
+/**
+Identifies a specific DBObject by its table and key. Used to describe references between
+saved objects, e.g. the retained references reported by a cascading `DBObject.delete`.
+*/
+public struct DBReference: Equatable, Hashable, Sendable {
+	public let table: DBTable
+	public let key: String
+
+	public init(table: DBTable, key: String) {
+		self.table = table
+		self.key = key
+	}
+}
+
+/**
+Outcome of a `DBObject.delete(from:cascadeDelete:)` call.
+*/
+public enum DBDeleteResult: Equatable, Sendable {
+	/// The object's own row could not be deleted.
+	case failed
+	/// The object and every referenced object that had no other referrers were deleted.
+	case completed
+	/// The object itself was deleted, but one or more referenced objects were left in place
+	/// because something else still refers to them.
+	case partial(retained: [DBReference])
 }
 
 public enum DBError: Error, Equatable, Sendable {

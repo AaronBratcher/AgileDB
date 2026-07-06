@@ -57,12 +57,15 @@ public init?(db: AgileDB, key: String) async
 public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil, saveNestedObjects: Bool = true) async -> Bool
 
 /**
- Remove the object from the database
+ Remove the object from the database.
 
- - parameter db: Database object that holds the data. This does not delete nested objects.
- - returns: Discardable Bool value of a successful deletion.
+ - parameter db: Database object that holds the data.
+ - parameter cascadeDelete: Also delete referenced objects that would otherwise be left orphaned, but only if nothing else still references them. Default value is false.
+
+ - returns: DBDeleteResult indicating whether the delete failed outright, completed in full, or completed but left some still-referenced objects in place.
 */
-public func delete(from db: AgileDB) async -> Bool
+@discardableResult
+public func delete(from db: AgileDB, cascadeDelete: Bool = false) async -> DBDeleteResult
 
 /**
  Asynchronously instantiate object and populate with values from the database, recursively if necessary.
@@ -130,6 +133,37 @@ struct Account: DBObject {
 }
 ```
 Types that never override `currentSchemaVersion` (the default, `1`) or `convertToCurrentSchema` behave exactly as before — this is purely additive.
+
+### Object References & Cascade Delete ###
+Every `save` records which other `DBObject`s this object's nested `DBObject`/`[DBObject]` properties currently point to, and updates a reverse-lookup ("who references me") on each of those objects. This bookkeeping is local to the database instance — it's not part of the JSON `value` document, not synced between instances, and invisible to your model's `Codable` conformance.
+
+`delete(from:cascadeDelete:)` uses that bookkeeping: with `cascadeDelete: true`, deleting an object also deletes any object it referenced that has no other referrers, walking recursively through the reference graph (a shared reference cycle is deleted as a whole once nothing outside the cycle still points into it). An object that's still referenced by something else is left in place instead.
+
+```swift
+struct Client: DBObject {
+    static var table: DBTable { Table.clients }
+    var key = UUID().uuidString
+    var name = ""
+}
+
+struct Invoice: DBObject {
+    static var table: DBTable { Table.invoices }
+    var key = UUID().uuidString
+    var client: Client
+}
+
+// invoice1 and invoice2 both reference the same client
+let result = await invoice1.delete(from: db, cascadeDelete: true)
+switch result {
+case .completed:
+    break // invoice1 deleted; client also deleted if invoice1 was its only referrer
+case .partial(let retained):
+    break // invoice1 deleted, but `retained` (e.g. [DBReference(table: Table.clients, key: client.key)]) is still referenced by invoice2, so it was left alone
+case .failed:
+    break // invoice1's own row could not be deleted
+}
+```
+This walk isn't atomic: if the app is interrupted partway through a cascade, some now-unreferenced objects may be left behind rather than deleted.
 
 ### All macros are currently in beta ###
 
@@ -567,6 +601,10 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+### 8.1 ###
+- DBObject now tracks references to other DBObjects made via nested `DBObject`/`[DBObject]` properties, updated on every `save`. This bookkeeping is local to the database instance and not synced.
+- `delete(from:cascadeDelete:)` gained a `cascadeDelete` parameter: when true, referenced objects with no other referrers are deleted along with the object, recursively. Returns a new `DBDeleteResult` (`.failed`, `.completed`, or `.partial(retained:)`) in place of the previous `Bool`.
+
 ### 8.0 ###
 - New `@Query` property wrapper and `#Predicate<T> { ... }` macro, modeled on SwiftData's, for fetching and filtering `DBObject`s in SwiftUI; set the database once via `.environment(\.modelContext, myDB)`.
 - New `@Model` macro generates `DBObject` conformance, `key`, `table`, and `codingKeys` for a class or struct; pair with `@Transient` on individual properties to exclude them from persistence.

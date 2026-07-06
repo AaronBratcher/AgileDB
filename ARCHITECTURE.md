@@ -18,7 +18,7 @@ the `@Model`/`@Transient`/`#Predicate`/`@Query` macros that are build on top of 
 | `DBObject` | Protocol your model types adopt to get type-safe `save`/`load`/`delete` and Codable-based (de)serialization, including nested objects. |
 | `DBResults` | An `AsyncSequence` of `DBObject`s, backed by a list of keys that are loaded lazily on demand. |
 | `DBResultsPublisher` | A Combine `Publisher` that emits `DBResults` and re-emits whenever the underlying query results change. |
-| Public models | `DBTable`, `DBCondition`, `DBConditionOperator`, `DBRow`, `DBError`, `DBCommandToken`, and the `Result` typealiases in `PublicModels.swift`. |
+| Public models | `DBTable`, `DBCondition`, `DBConditionOperator`, `DBRow`, `DBReference`, `DBDeleteResult`, `DBError`, `DBCommandToken`, and the `Result` typealiases in `PublicModels.swift`. |
 | Macros (`AgileDBMacrosPlugin`) | `@Model`, `@Transient`, `#Predicate`, and `@Query` — compile-time helpers that remove `DBObject` boilerplate and add SwiftData-style querying. |
 
 ## Storage model
@@ -31,11 +31,14 @@ create table <table> (
     autoDeleteDateTime text,
     addedDateTime text,
     updatedDateTime text,
-    value text            -- the object body as a JSON document
+    value text,                          -- the object body as a JSON document
+    externalReferences text default '[]', -- objects that reference this row, JSON [{table,key}]
+    internalReferences text default '[]'  -- objects this row references, JSON [{table,key}]
 )
 ```
 
-- The `key` and the three date columns are real columns; **all other object properties live inside the `value` JSON document**.
+- The `key`, the three date columns, and the two reference columns are real columns;
+  **all other object properties live inside the `value` JSON document**.
 - Writes are a single-row UPSERT (`on conflict(key) do update …`), making each save atomic.
 - Conditions and sort orders are translated to `json_extract(value, '$.field')`
   expressions. The `contains` operator resolves at query time via `json_type`: array
@@ -45,6 +48,10 @@ create table <table> (
   real column names usable from direct SQL.
 - Reserved internal tables are prefixed with `__` (e.g. `__settings`, `__synclog`,
   `__unsyncedTables`) or `sqlite_stat`.
+- `externalReferences`/`internalReferences` are framework-managed bookkeeping, outside the
+  `value` document and outside `Codable`. They're local to the database instance — never
+  part of a sync file — and are what `delete(from:cascadeDelete:)` walks (see
+  "Object references & cascade delete" below).
 
 ## Concurrency model
 
@@ -174,8 +181,8 @@ public protocol DBObject: Codable, Sendable {
 | `static func convertToCurrentSchema(_:from:)` | Defaults to returning the dictionary unchanged. |
 | `init?(db: AgileDB, key: String) async` | Load an instance by key; `nil` if missing or undecodable. |
 | `static func load(from: AgileDB, for key: String) async throws -> Self` | Load an instance by key; throws `DBError` on failure. |
-| `func save(to: AgileDB, autoDeleteAfter: Date? = nil, saveNestedObjects: Bool = true) async -> Bool` | Persist the object (and, by default, nested `DBObject`s and arrays of them). |
-| `func delete(from: AgileDB) async -> Bool` | Delete the object (does not delete nested objects). |
+| `func save(to: AgileDB, autoDeleteAfter: Date? = nil, saveNestedObjects: Bool = true) async -> Bool` | Persist the object (and, by default, nested `DBObject`s and arrays of them); also reconciles reference bookkeeping (see below). |
+| `func delete(from: AgileDB, cascadeDelete: Bool = false) async -> DBDeleteResult` | Delete the object. With `cascadeDelete: true`, also deletes referenced objects left with no other referrers. |
 | `var jsonValue: String?` | Full JSON encoding of the object (dates use `AgileDB.dateFormatter`). |
 | `var dictValue: [String: any Sendable]?` | Dictionary used for storage; **nested `DBObject`s are referenced by key only, not embedded**. |
 
@@ -199,6 +206,50 @@ means `1`, for rows saved before this existed) and, if the type's `currentSchema
 greater, run it through `convertToCurrentSchema` before decoding. The conversion is a plain,
 synchronous `[String: any Sendable] -> [String: any Sendable]` transform — no DB access — so
 it composes with the existing nested-object retry loop without changes.
+
+### Object references & cascade delete
+
+Every `save` walks the same `Mirror` reflection used for nested-object saving to collect the
+current set of `DBReference`s (`table` + `key`) the object's `DBObject`/`[DBObject]`
+properties point to. It then:
+
+1. Reads the object's *previous* `internalReferences` (nil on first save).
+2. Diffs old vs. new: for each reference gained, appends this object's own `DBReference` to
+   the target's `externalReferences`; for each reference lost, removes it.
+3. Writes the new set as this object's own `internalReferences`.
+
+This runs whether or not `saveNestedObjects` is true — it only gates the recursive `save`
+call on each nested child, not the reference bookkeeping itself.
+
+`delete(from:cascadeDelete:)` with `cascadeDelete: true` calls `AgileDB.cascadeDelete(_:visited:)`,
+a depth-first walk over `internalReferences`/`externalReferences` alone (no `Codable`
+decoding, no knowledge of concrete `DBObject` types required):
+
+```
+cascadeDelete(reference, visited):
+    if reference in visited: return
+    visited.insert(reference)
+    for target in internalReferences(reference):
+        remove reference from target's externalReferences
+        if target's externalReferences now empty:
+            recurse cascadeDelete(target, visited)
+        else:
+            record target as retained
+    delete reference's own row
+```
+
+The `visited` set makes this safe against reference cycles — a cycle with no referrers from
+outside the deleted subgraph is fully collected once every node in it has had its incoming
+edges removed, the same as an acyclic chain. `DBObject.delete` maps the walk's outcome to
+`DBDeleteResult`: `.failed` if any row deletion failed, `.completed` if nothing was retained,
+otherwise `.partial(retained:)` with the objects left in place because something outside the
+walk still references them.
+
+This bookkeeping and the cascade walk are **not atomic**: each read/write pair (e.g. read
+`externalReferences`, then write it back) is a separate round trip, so a concurrent save
+touching the same target row, or an interruption mid-cascade, can leave the reference graph
+or the deletion partially applied — consistent with `save`'s existing non-atomicity for
+nested objects.
 
 ---
 
@@ -355,10 +406,12 @@ directly.
 
 | Type | Description |
 | --- | --- |
-| `struct DBTable` | Identifies a table. `Equatable`, `Sendable`, `ExpressibleByStringLiteral`, `CustomStringConvertible`. Rejects empty/reserved names. |
+| `struct DBTable` | Identifies a table. `Equatable`, `Hashable`, `Sendable`, `ExpressibleByStringLiteral`, `CustomStringConvertible`. Rejects empty/reserved names. |
 | `struct DBCondition` | A query condition: `set` (OR-group page), `objectKey`, `conditionOperator`, and `value`. Conditions in the same `set` are AND'd; different sets are OR'd. |
 | `enum DBConditionOperator: String` | `equal` `=`, `notEqual` `<>`, `lessThan` `<`, `greaterThan` `>`, `lessThanOrEqual` `<=`, `greaterThanOrEqual` `>=`, `contains` `...`, `inList` `()`. |
 | `struct DBRow` | A raw query row: `values: [(any Sendable)?]`. |
+| `struct DBReference` | A `table` + `key` pair identifying a specific `DBObject`. Used for `internalReferences`/`externalReferences` bookkeeping and reported in `DBDeleteResult.partial(retained:)`. `Equatable`, `Hashable`, `Sendable`. |
+| `enum DBDeleteResult` | Outcome of `DBObject.delete(from:cascadeDelete:)`: `.failed`, `.completed`, or `.partial(retained: [DBReference])`. |
 | `struct DBCommandToken` | Returned by closure-based async methods; `cancel() -> Bool` removes the command before it executes. |
 | `enum DBError` | `cannotWriteToFile`, `diskError`, `damagedFile`, `cannotOpenFile`, `tableNotFound`, `cannotParseData`, `other(Int)`. `RawRepresentable` by `Int`. |
 | `typealias BoolResults` | `Result<Bool, DBError>` |

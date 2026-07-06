@@ -66,6 +66,10 @@ extension DBObject {
 	/**
 	Save the object to the database. At this time, this is not an atomic operation for nested Objects.
 
+	Also reconciles this object's references to any nested DBObject/[DBObject] properties, so
+	that a later `delete(from:cascadeDelete:)` can tell whether a referenced object is still
+	needed elsewhere. This bookkeeping happens whether or not `saveNestedObjects` is true.
+
 	- parameter db: Database object to hold the data.
 	- parameter expiration: Optional Date specifying when the data is to be automatically deleted.
 	- parameter saveNestedObjects: Save nested DBObjects and arrays of DBObjects. Default value is true.
@@ -74,38 +78,57 @@ extension DBObject {
 	*/
 	@discardableResult
 	public func save(to db: AgileDB, autoDeleteAfter expiration: Date? = nil, saveNestedObjects: Bool = true) async -> Bool {
-		if saveNestedObjects {
-			let mirror = Mirror(reflecting: self)
-			for child in mirror.children {
-				if let dbObject = child.value as? DBObject {
-					await dbObject.save(to: db)
-				}
+		var references: [DBReference] = []
 
-				if let objectArray = child.value as? [DBObject] {
-					for dbObject in objectArray {
-						await dbObject.save(to: db)
-					}
+		let mirror = Mirror(reflecting: self)
+		for child in mirror.children {
+			if let dbObject = child.value as? DBObject {
+				if saveNestedObjects { await dbObject.save(to: db) }
+				references.append(DBReference(table: type(of: dbObject).table, key: dbObject.key))
+			}
+
+			if let objectArray = child.value as? [DBObject] {
+				for dbObject in objectArray {
+					if saveNestedObjects { await dbObject.save(to: db) }
+					references.append(DBReference(table: type(of: dbObject).table, key: dbObject.key))
 				}
 			}
 		}
 
-		guard let dictValue = dictValue,
-		      await db.setValueInTable(Self.table, for: key, to: dictValue, autoDeleteAfter: expiration)
-		else { return false }
+		guard let dictValue = dictValue else { return false }
+
+		let oldReferences = await db.internalReferences(for: Self.table, key: key)
+
+		guard await db.setValueInTable(Self.table, for: key, to: dictValue, autoDeleteAfter: expiration) else { return false }
+
+		await db.updateReferences(from: DBReference(table: Self.table, key: key), oldReferences: oldReferences, newReferences: references)
 
 		return true
 	}
 
 	/**
-	Remove the object from the database. Does not delete nested objects.
+	Remove the object from the database.
+
+	By default this does not delete nested objects. With `cascadeDelete: true`, any nested
+	DBObject/[DBObject] this object references is also deleted, but only if nothing else
+	still references it — an object shared with another still-existing referrer is left in
+	place. This walk isn't atomic: if the app is interrupted partway through a cascade, some
+	now-unreferenced objects may be left behind rather than deleted.
 
 	- parameter db: Database object that holds the data.
+	- parameter cascadeDelete: Also delete referenced objects that would otherwise be left orphaned. Default value is false.
 
-	- returns: Discardable Bool value of a successful deletion.
+	- returns: DBDeleteResult indicating whether the delete failed outright, completed in full, or completed but left some still-referenced objects in place.
 	*/
 	@discardableResult
-	public func delete(from db: AgileDB) async -> Bool {
-		return await db.deleteFromTable(Self.table, for: key)
+	public func delete(from db: AgileDB, cascadeDelete: Bool = false) async -> DBDeleteResult {
+		guard cascadeDelete else {
+			return await db.deleteFromTable(Self.table, for: key) ? .completed : .failed
+		}
+
+		let outcome = await db.cascadeDelete(DBReference(table: Self.table, key: key), visited: [])
+		guard outcome.succeeded else { return .failed }
+		return outcome.retained.isEmpty ? .completed : .partial(retained: outcome.retained)
 	}
 
 	/**

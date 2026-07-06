@@ -1376,6 +1376,143 @@ extension AgileDB {
 		return valueDict
 	}
 
+	// MARK: - Object references
+	// DBObject maintains two bookkeeping columns per row, alongside `value`:
+	// `internalReferences` (what this row's nested DBObject properties currently point to)
+	// and `externalReferences` (which other rows currently point to this one). Neither is
+	// part of the `value` JSON document or the Codable path; they're framework-managed and
+	// local to this database instance (not synced).
+
+	/// Serializes references to the JSON array stored in `externalReferences`/`internalReferences`.
+	private static func referencesJSON(_ references: [DBReference]) -> String {
+		let array = references.map { ["table": $0.table.name, "key": $0.key] }
+		guard let data = try? JSONSerialization.data(withJSONObject: array),
+			  let string = String(data: data, encoding: .utf8)
+		else { return "[]" }
+		return string
+	}
+
+	/// Parses the JSON array stored in `externalReferences`/`internalReferences`.
+	private static func references(fromJSON json: String?) -> [DBReference] {
+		guard let json, let data = json.data(using: .utf8),
+			  let array = try? JSONSerialization.jsonObject(with: data) as? [[String: String]]
+		else { return [] }
+
+		return array.compactMap { entry in
+			guard let tableName = entry["table"], let key = entry["key"] else { return nil }
+			return DBReference(table: DBTable(name: tableName), key: key)
+		}
+	}
+
+	private func references(in table: DBTable, for key: String, column: String) async -> [DBReference]? {
+		guard tables.hasTable(table) else { return nil }
+		guard let results = await sqlRows("select \(column) from \(table) where key = '\(esc(key))'"), results.isNotEmpty else { return nil }
+		return AgileDB.references(fromJSON: results[0].values[0] as? String)
+	}
+
+	/// The other objects this row's nested DBObject/[DBObject] properties currently reference; nil if the row doesn't exist.
+	func internalReferences(for table: DBTable, key: String) async -> [DBReference]? {
+		await references(in: table, for: key, column: "internalReferences")
+	}
+
+	/// The objects currently referencing this row; nil if the row doesn't exist.
+	func externalReferences(for table: DBTable, key: String) async -> [DBReference]? {
+		await references(in: table, for: key, column: "externalReferences")
+	}
+
+	@discardableResult
+	private func setInternalReferences(_ table: DBTable, for key: String, to references: [DBReference]) async -> Bool {
+		guard tables.hasTable(table) else { return false }
+		return await sqlExecute("update \(table) set internalReferences = ? where key = ?", parameters: [AgileDB.referencesJSON(references), key])
+	}
+
+	@discardableResult
+	private func setExternalReferences(_ table: DBTable, for key: String, to references: [DBReference]) async -> Bool {
+		guard tables.hasTable(table) else { return false }
+		return await sqlExecute("update \(table) set externalReferences = ? where key = ?", parameters: [AgileDB.referencesJSON(references), key])
+	}
+
+	/// Adds `referrer` to `target`'s `externalReferences`, if not already present. No-op if `target`'s row doesn't exist.
+	private func addExternalReference(_ referrer: DBReference, to target: DBReference) async {
+		guard var current = await externalReferences(for: target.table, key: target.key) else { return }
+		guard !current.contains(referrer) else { return }
+		current.append(referrer)
+		await setExternalReferences(target.table, for: target.key, to: current)
+	}
+
+	/// Removes `referrer` from `target`'s `externalReferences`. No-op if `target`'s row doesn't exist.
+	private func removeExternalReference(_ referrer: DBReference, from target: DBReference) async {
+		guard var current = await externalReferences(for: target.table, key: target.key) else { return }
+		let originalCount = current.count
+		current.removeAll { $0 == referrer }
+		guard current.count != originalCount else { return }
+		await setExternalReferences(target.table, for: target.key, to: current)
+	}
+
+	/// Called after `referrer`'s own row is saved: reconciles the backlinks on every table
+	/// this object gained or lost a nested-DBObject reference to, and stamps `referrer`'s own
+	/// `internalReferences` with the new set. `oldReferences` is `referrer`'s previous
+	/// `internalReferences` (nil for a first-time save).
+	func updateReferences(from referrer: DBReference, oldReferences: [DBReference]?, newReferences: [DBReference]) async {
+		let oldSet = Set(oldReferences ?? [])
+		let newSet = Set(newReferences)
+
+		for reference in newSet.subtracting(oldSet) {
+			await addExternalReference(referrer, to: reference)
+		}
+
+		for reference in oldSet.subtracting(newSet) {
+			await removeExternalReference(referrer, from: reference)
+		}
+
+		await setInternalReferences(referrer.table, for: referrer.key, to: Array(newSet))
+	}
+
+	/// Outcome of a single node's cascade delete, threading `visited` through functionally
+	/// since it needs to accumulate across recursive `await` calls.
+	struct CascadeDeleteOutcome {
+		var succeeded: Bool
+		var visited: Set<DBReference>
+		var retained: [DBReference]
+	}
+
+	/// Deletes `reference`'s row, then recursively deletes any object it referenced that has
+	/// no remaining referrers. Objects that still have other referrers after removing this
+	/// backlink are left alone and reported in `retained`. `visited` guards against reference
+	/// cycles.
+	func cascadeDelete(_ reference: DBReference, visited: Set<DBReference>) async -> CascadeDeleteOutcome {
+		if visited.contains(reference) {
+			return CascadeDeleteOutcome(succeeded: true, visited: visited, retained: [])
+		}
+
+		var visited = visited
+		visited.insert(reference)
+
+		let forwardReferences = await internalReferences(for: reference.table, key: reference.key) ?? []
+
+		var retained: [DBReference] = []
+		var succeeded = true
+
+		for target in forwardReferences {
+			await removeExternalReference(reference, from: target)
+
+			let remainingReferrers = await externalReferences(for: target.table, key: target.key) ?? []
+			if remainingReferrers.isEmpty {
+				let childOutcome = await cascadeDelete(target, visited: visited)
+				visited = childOutcome.visited
+				retained.append(contentsOf: childOutcome.retained)
+				succeeded = succeeded && childOutcome.succeeded
+			} else {
+				retained.append(target)
+			}
+		}
+
+		let deleted = await deleteFromTable(reference.table, for: reference.key)
+		succeeded = succeeded && deleted
+
+		return CascadeDeleteOutcome(succeeded: succeeded, visited: visited, retained: retained)
+	}
+
 	// MARK: - Internal Table methods
 	static func reservedTable(_ table: String) -> Bool {
 		return table.hasPrefix("__") || table.hasPrefix("sqlite_stat")
@@ -1384,7 +1521,7 @@ extension AgileDB {
 	private func createTable(_ table: DBTable) async -> Bool {
 		if tables.hasTable(table) { return true }
 
-		let ct1 = await sqlExecute("create table \(table) (key text PRIMARY KEY, autoDeleteDateTime text, addedDateTime text, updatedDateTime text, value text)")
+		let ct1 = await sqlExecute("create table \(table) (key text PRIMARY KEY, autoDeleteDateTime text, addedDateTime text, updatedDateTime text, value text, externalReferences text default '[]', internalReferences text default '[]')")
 		let ct2 = await sqlExecute("create index idx_\(table)_autoDeleteDateTime on \(table)(autoDeleteDateTime)")
 		if !ct1 || !ct2 { return false }
 
