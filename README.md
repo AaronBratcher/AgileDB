@@ -112,7 +112,7 @@ await category.delete(from: db)
 ```
 
 ### Schema Versioning ###
-Every save stamps the stored dictionary with the type's `currentSchemaVersion`. When loading data saved under an older version, `convertToCurrentSchema` is called automatically with the raw stored dictionary and the version it was saved with, and its return value is what actually gets decoded — including for nested `DBObject`s loaded as part of a parent. Rows saved before this feature existed have no version stored at all, which is treated the same as version `1`.
+Every save stamps the stored dictionary with the type's `currentSchemaVersion` (default 1). When loading data saved under an older version, `convertToCurrentSchema` is called automatically with the raw stored dictionary and the version it was saved with, and its return value is what actually gets decoded — including for nested `DBObject`s loaded as part of a parent.
 
 ```swift
 struct Account: DBObject {
@@ -132,7 +132,6 @@ struct Account: DBObject {
     }
 }
 ```
-Types that never override `currentSchemaVersion` (the default, `1`) or `convertToCurrentSchema` behave exactly as before — this is purely additive.
 
 ### Object References & Cascade Delete ###
 Every `save` records which other `DBObject`s this object's nested `DBObject`/`[DBObject]` properties currently point to, and updates a reverse-lookup ("who references me") on each of those objects. This bookkeeping is local to the database instance — it's not part of the JSON `value` document, not synced between instances, and invisible to your model's `Codable` conformance.

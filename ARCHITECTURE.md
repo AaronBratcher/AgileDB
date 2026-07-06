@@ -204,8 +204,7 @@ both decode entry points (`DBObject.dbObjectWithDict` for top-level loads, and
 `DictKeyedContainer.decodeNested` for nested objects) read back `schemaVersion` (missing
 means `1`, for rows saved before this existed) and, if the type's `currentSchemaVersion` is
 greater, run it through `convertToCurrentSchema` before decoding. The conversion is a plain,
-synchronous `[String: any Sendable] -> [String: any Sendable]` transform — no DB access — so
-it composes with the existing nested-object retry loop without changes.
+**synchronous** `[String: any Sendable] -> [String: any Sendable]` transform — no DB access.
 
 ### Object references & cascade delete
 
