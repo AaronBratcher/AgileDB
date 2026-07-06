@@ -600,14 +600,16 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
-### 8.1 ###
+### 8.2 ###
 - DBObject now tracks references to other DBObjects made via nested `DBObject`/`[DBObject]` properties, updated on every `save`. This bookkeeping is local to the database instance and not synced.
 - `delete(from:cascadeDelete:)` gained a `cascadeDelete` parameter: when true, referenced objects with no other referrers are deleted along with the object, recursively. Returns a new `DBDeleteResult` (`.failed`, `.completed`, or `.partial(retained:)`) in place of the previous `Bool`.
+
+### 8.1 ###
+- DBObject gained schema versioning: `currentSchemaVersion` (default `1`) and `convertToCurrentSchema(_:from:)` (default: returns the dictionary unchanged). When loading data saved under an older version, `convertToCurrentSchema` runs automatically, for both top-level and nested objects.
 
 ### 8.0 ###
 - New `@Query` property wrapper and `#Predicate<T> { ... }` macro, modeled on SwiftData's, for fetching and filtering `DBObject`s in SwiftUI; set the database once via `.environment(\.modelContext, myDB)`.
 - New `@Model` macro generates `DBObject` conformance, `key`, `table`, and `codingKeys` for a class or struct; pair with `@Transient` on individual properties to exclude them from persistence.
-- DBObject gained schema versioning: `currentSchemaVersion` (default `1`) and `convertToCurrentSchema(_:from:)` (default: returns the dictionary unchanged). When loading data saved under an older version, `convertToCurrentSchema` runs automatically, for both top-level and nested objects.
 - Removed the `validateObjects` parameter from `keysInTable`, `countKeysInTable`, and `publisher`. Since 7.0's move to JSON-document storage there was no table schema left to validate condition sets against, so the parameter had been silently ignored; it's now gone from the API entirely.
 
 ### 7.0 ###
