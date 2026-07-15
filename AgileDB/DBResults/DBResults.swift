@@ -8,7 +8,10 @@
 
 import Foundation
 
-public class DBResults<T: DBObject>: Identifiable {
+/// `@unchecked Sendable`: both stored properties are immutable (`keys` is a plain array of
+/// `String`, `db` is an actor), so a `DBResults` is safe to hand across isolation domains even
+/// though its generic parameter `T` isn't required to be `Sendable`.
+public class DBResults<T: DBObject>: Identifiable, @unchecked Sendable {
 	public typealias CustomClassValue = T
 	public typealias CustomClassIndex = Array<String>.Index
 
