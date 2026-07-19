@@ -332,28 +332,41 @@ querying.
 
 ### `@Model(table:)`
 
-Attached to a `struct`/`class`. Conforms it to `DBObject` (via an `@attached(extension)`)
-and synthesizes members (`@attached(member)`):
+Attached to a `class` only — attaching it to a `struct` is a compile-time error, since the
+macro also conforms the type to `Observable` (Swift's `Observation` framework), which only
+supports reference types. Conforms the type to `DBObject` and `Observable` (via an
+`@attached(extension)`), stamps `@ObservationTracked` on eligible stored properties (via
+`@attached(memberAttribute)`), and synthesizes members (`@attached(member)`):
 
 | Generated | When |
 | --- | --- |
-| `var key = UUID().uuidString` | Unless the type already declares its own `key` |
+| `var key: String = UUID().uuidString` | Unless the type already declares its own `key` |
 | `static var table: DBTable` | From the `table:` argument, or `DBTable(name: "<TypeName>")` if omitted |
-| `codingKeys: [CodingKey]` (plus a `CodingKeys` enum) | Only emitted if at least one property is `@Transient`, so `Codable` synthesis skips it entirely |
+| `init() {}` | Unless the type already declares an initializer of its own (a class loses its compiler-synthesized no-arg `init()` once `init(from:)` below is added) |
+| An `ObservationRegistrar`, plus `access`/`withMutation`/`shouldNotifyObservers` helpers | Always — the plumbing `@ObservationTracked`'s generated accessors call into |
+| `CodingKeys` enum, `init(from:)`, `encode(to:)` | Always — listing every stored property not marked `@Transient` |
+
+**Every property that will be persisted must have an explicit type annotation.** Because
+`@ObservationTracked` rewrites stored properties into computed ones, the compiler's own
+`Codable` synthesis can no longer see them as stored, so `@Model` generates
+`init(from:)`/`encode(to:)` itself instead of relying on it — and macros expand before
+type-checking, so there's no way to infer a property's type from its initializer expression
+the way the compiler can. A property without an explicit type annotation is a compile-time
+error.
 
 ```swift
 @Model(table: Table.categories)
-public struct MoneyCategory: Sendable {
-    public var name = "Unspecified"
-    @Transient public var isNew = true
+public final class MoneyCategory: @unchecked Sendable {
+    public var name: String = "Unspecified"
+    @Transient public var isNew: Bool = true
 }
 ```
 
 ### `@Transient`
 
 Marker-only `@attached(peer)` macro with no expansion of its own — `@Model` looks for it
-while walking a type's stored properties and excludes that property from `codingKeys`
-(and therefore from persistence and decoding).
+while walking a type's stored properties and excludes that property from the generated
+`CodingKeys` enum (and therefore from persistence, decoding, and encoding).
 
 ### `#Predicate<T> { ... }`
 

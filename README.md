@@ -167,26 +167,28 @@ This walk isn't atomic: if the app is interrupted partway through a cascade, som
 ### All macros are currently in beta ###
 
 ## Model Macro ##
-`@Model` generates the `DBObject` boilerplate shown above for a class or struct: `DBObject` conformance, the `key` property (if not already declared), `static var table`, and a `codingKeys` implementation. Mark any properties that shouldn't be persisted with `@Transient`; everything else is included.
+`@Model` must be attached to a `class`, not a `struct` — it also makes the type `Observable`, and `Observable` (Swift's `Observation` framework) only works on reference types. It generates the `DBObject` boilerplate shown above (`DBObject` conformance, the `key` property if not already declared, `static var table`, `init(from:)`, and `encode(to:)`), plus the `Observable` machinery — an `ObservationRegistrar` and `@ObservationTracked` on eligible stored properties — so instances participate in SwiftUI observation like any other `@Observable` class. Mark any properties that shouldn't be persisted with `@Transient`; everything else is included.
 
 ```swift
 @Model(table: Table.categories)
-struct Category {
-    var accountKey = ""
-    var name = ""
-    var inSummary = true
-    @Transient var isNew = true // not saved to the database
+final class Category: @unchecked Sendable {
+    var accountKey: String = ""
+    var name: String = ""
+    var inSummary: Bool = true
+    @Transient var isNew: Bool = true // not saved to the database
 }
 ```
-is equivalent to the hand-written `Category` above, plus excluding `isNew` from what's persisted.
+generates the same boilerplate as the hand-written `Category` above (plus `Observable` conformance), while excluding `isNew` from what's persisted.
 
-`@Transient` properties don't need to be Optional. When at least one property is marked `@Transient`, the macro generates the `CodingKeys` enum under that exact name, which the Swift compiler recognizes specially: any stored property left out of `CodingKeys` is skipped entirely during decode and keeps its own declared default value instead of requiring the key to be present. Because of this, a non-optional `@Transient` property must have a default value (`= true`, `= 0`, `= ""`, etc.) — without one, the type won't compile as `Decodable`.
+**Every property that will be persisted must have an explicit type annotation** (`var name: String = ""`, not `var name = ""`). The macro generates `init(from:)`/`encode(to:)` itself rather than relying on the compiler's `Codable` synthesis — `@ObservationTracked` turns stored properties into computed ones, which disables that synthesis — and macros expand before type-checking, so there's no way to infer a property's type from its initializer expression the way the compiler can. A property without an explicit type annotation is a compile-time error.
+
+`@Transient` properties don't need to be Optional, but they are skipped entirely in the generated `init(from:)`/`encode(to:)`, so a non-optional `@Transient` property must have a default value (`= true`, `= 0`, `= ""`, etc.) to keep it after decoding — without one, the type won't compile as `Decodable`.
 
 The `table` argument is optional. If omitted, the table name is derived from the type's own name:
 ```swift
 @Model
 final class Widget: @unchecked Sendable {
-    var name = ""
+    var name: String = ""
 }
 // Widget.table == DBTable(name: "Widget")
 ```
@@ -600,6 +602,10 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+### 8.3 ###
+- `@Model` is now class-only; attaching it to a `struct` is a compile-time error. The macro also conforms the type to `Observable` and adds `@ObservationTracked` to eligible stored properties, so instances participate in SwiftUI observation.
+- `@Model` now generates `init(from:)`/`encode(to:)` itself instead of relying on the compiler's `Codable` synthesis (which `@ObservationTracked`'s computed properties disable). **Every property that will be persisted must have an explicit type annotation** as a result — macros can't infer a type from an initializer expression the way the compiler can.
+
 ### 8.2 ###
 - DBObject now tracks references to other DBObjects made via nested `DBObject`/`[DBObject]` properties, updated on every `save`. This bookkeeping is local to the database instance and not synced.
 - `delete(from:cascadeDelete:)` gained a `cascadeDelete` parameter: when true, referenced objects with no other referrers are deleted along with the object, recursively. Returns a new `DBDeleteResult` (`.failed`, `.completed`, or `.partial(retained:)`) in place of the previous `Bool`.
