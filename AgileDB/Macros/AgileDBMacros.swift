@@ -5,26 +5,37 @@
 //  Created by Aaron Bratcher on 7/4/26.
 //
 
+import Observation
+
 /**
-Conforms the attached class or struct to `DBObject` and generates its boilerplate:
+Conforms the attached class to `DBObject` and `Observable`, and generates its boilerplate:
 
 - `key`, if the type doesn't already declare one (defaults to `UUID().uuidString`)
 - `static var table`, from the `table:` argument, or derived from the type name if omitted
-- `codingKeys`, listing every stored property not marked `@Transient`
+- an `ObservationRegistrar` and `@ObservationTracked` on every eligible stored property, so
+  instances participate in SwiftUI observation like any other `@Observable` class
+- `CodingKeys`, `init(from:)`, and `encode(to:)`, listing every stored property not marked
+  `@Transient`
 
 ```swift
 @Model(table: Table.categories)
-public struct MoneyCategory: Sendable {
-    public var key = UUID().uuidString
-    public var name = "Unspecified"
-    @Transient public var isNew = true
+public final class MoneyCategory: @unchecked Sendable {
+    public var key: String = UUID().uuidString
+    public var name: String = "Unspecified"
+    @Transient public var isNew: Bool = true
 }
 ```
 
+Every non-`@Transient` stored property needs an explicit type annotation: the macro generates
+`init(from:)`/`encode(to:)` itself (required once `@ObservationTracked` turns stored properties
+into computed ones, which disables the compiler's own `Codable` synthesis), and macros can't
+infer a property's type from its initializer expression.
+
 - parameter table: Optional expression evaluating to a `DBTable`. Defaults to `DBTable(name:)` using the type's own name.
 */
-@attached(extension, conformances: DBObject)
-@attached(member, names: named(key), named(table), named(codingKeys), arbitrary)
+@attached(extension, conformances: DBObject, Observable)
+@attached(memberAttribute)
+@attached(member, names: named(key), named(table), named(init), named(encode), arbitrary)
 public macro Model(table: DBTable? = nil) = #externalMacro(module: "AgileDBMacrosPlugin", type: "ModelMacro")
 
 /**

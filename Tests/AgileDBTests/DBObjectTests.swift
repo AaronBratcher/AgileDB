@@ -126,15 +126,15 @@ final class RestrictedPublishingObject: DBObject, @unchecked Sendable {
 
 @Model(table: "MacroWidget")
 final class MacroWidget: @unchecked Sendable {
-	var name = "Widget Name"
-	var count = 5
+	var name: String = "Widget Name"
+	var count: Int = 5
 	@Transient var internalNotes: String = "Should not be stored"
 	@Transient var internalFlag: Bool = true
 }
 
 @Model
 final class MacroDerivedTableModel: @unchecked Sendable {
-	var name = "Derived"
+	var name: String = "Derived"
 }
 
 struct VersionedChild: DBObject {

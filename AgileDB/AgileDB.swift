@@ -7,6 +7,7 @@
 
 import Foundation
 import SQLite3
+@_exported import Observation
 
 public actor AgileDB {
 	enum ValueType: String {

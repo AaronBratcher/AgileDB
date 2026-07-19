@@ -11,9 +11,9 @@ import Testing
 
 @Model(table: "PredicateAccount")
 final class PredicateAccount: @unchecked Sendable {
-	var name = ""
-	var type = "checking"
-	var balance = 0
+	var name: String = ""
+	var type: String = "checking"
+	var balance: Int = 0
 	var tags: [String] = []
 }
 

@@ -7,7 +7,7 @@ import CompilerPluginSupport
 let package = Package(
 	name: "AgileDB",
 	platforms: [
-		.iOS(.v18), .macOS(.v12), .tvOS(.v18), .watchOS(.v9)
+		.iOS(.v18), .macOS(.v14), .tvOS(.v18), .watchOS(.v10)
 	],
 	products: [
 		.library(
