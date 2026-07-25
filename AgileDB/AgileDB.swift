@@ -1784,7 +1784,10 @@ private extension AgileDB {
 		}
 
 		func close(automatically: Bool = false) {
+			let closedLock = DispatchSemaphore(value: 0)
 			let block = { @Sendable [unowned self] in
+				defer { closedLock.signal() }
+
 				if automatically {
 					if self.automaticallyClosed || Date().timeIntervalSince1970 < (self.lastActivity + Double(self.autoCloseTimeout)) {
 						return
@@ -1800,6 +1803,7 @@ private extension AgileDB {
 			}
 
 			addBlock(block)
+			closedLock.wait()
 		}
 
 		func lastID(_ completion: @escaping @Sendable (_ lastInsertionID: sqlite3_int64) -> Void) {
