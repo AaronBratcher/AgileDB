@@ -1800,6 +1800,14 @@ private extension AgileDB {
 
 				sqlite3_close_v2(self.sqliteDB)
 				self.sqliteDB = nil
+
+				let fileManager = FileManager.default
+				for suffix in ["-shm", "-wal"] {
+					let sidecarPath = self.dbFilePath + suffix
+					if fileManager.fileExists(atPath: sidecarPath) {
+						try? fileManager.removeItem(atPath: sidecarPath)
+					}
+				}
 			}
 
 			addBlock(block)
