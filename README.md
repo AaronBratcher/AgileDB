@@ -414,7 +414,7 @@ let token = await AgileDB.shared.countKeysInTable(table) { results in
 
 
 ### Values ###
-Data can be set or retrieved manually as shown here or your class/struct can adhere to the DBObject protocol, documented above, and use the built-in init and save methods for greater ease and flexibility.
+Data can be set or retrieved manually as shown here or your class/struct can conform to the DBObject protocol, documented above, and use the built-in init and save methods for greater ease and flexibility.
 
 Set value in table
 ```swift
