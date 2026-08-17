@@ -24,6 +24,16 @@ public actor AgileDB {
 
 	public static let shared = AgileDB()
 
+	/// Called when the database file could not be reopened after being automatically closed
+	/// (for example, right after the host machine wakes from sleep and its volume is still
+	/// remounting) even after retrying internally. Set this to alert the user instead of
+	/// leaving queued operations stalled with no explanation. May be called from a background
+	/// thread. `nonisolated` so it can be set/read without hopping onto the actor.
+	public nonisolated var onDatabaseUnavailable: (@Sendable () -> Void)? {
+		get { dbCore.onDatabaseUnavailable }
+		set { dbCore.onDatabaseUnavailable = newValue }
+	}
+
 	/// Path of the database file. Nil if database hasn't been opened yet
 	private(set) public var dbFilePath: String?
 
@@ -1716,6 +1726,7 @@ private extension AgileDB {
 		private var automaticallyClosed = false
 		private let blockQueue = DispatchQueue(label: "com.AaronLBratcher.AgileDBBlockQueue", attributes: [])
 		private var blockReference: UInt = 1
+		var onDatabaseUnavailable: (@Sendable () -> Void)?
 
 		private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -2075,9 +2086,12 @@ private extension AgileDB {
 				// re-checking here, that later block would run against a nil sqliteDB.
 				while true {
 					if automaticallyClosed {
-						let results = openFile()
-						if case .failure(_) = results {
-							fatalError("Unable to open DB")
+						if !reopenAfterAutoClose() {
+							// Still couldn't open the file after retrying (e.g. the volume is
+							// still unavailable right after a system wake). Leave the queue
+							// intact rather than running blocks against a nil sqliteDB - the
+							// next signal (a new block, or another auto-close cycle) tries again.
+							break
 						}
 					}
 
@@ -2120,6 +2134,32 @@ private extension AgileDB {
 			autoCloseTimer?.resume()
 			automaticallyClosed = false
 			return BoolResults.success(true)
+		}
+
+		/// Retries `openFile()` a few times with a short, increasing delay before giving up.
+		/// A failure right after this call is most often transient - e.g. the host machine
+		/// just woke from sleep and its volume hasn't finished remounting - and clears within
+		/// a second or two. Treating the first failure as fatal used to crash the app on every
+		/// sleep/wake cycle that raced a slow-to-remount volume.
+		private func reopenAfterAutoClose() -> Bool {
+			let maxAttempts = 5
+
+			for attempt in 1...maxAttempts {
+				if case .success = openFile() {
+					return true
+				}
+
+				if attempt < maxAttempts {
+					Thread.sleep(forTimeInterval: 0.2 * Double(attempt))
+				}
+			}
+
+			if isDebugging {
+				print("AgileDB: unable to reopen database after \(maxAttempts) attempts")
+			}
+
+			onDatabaseUnavailable?()
+			return false
 		}
 	}
 }

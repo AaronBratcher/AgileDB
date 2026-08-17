@@ -62,6 +62,13 @@ create table <table> (
   manages its own concurrency.
 - The file auto-closes after `autoCloseTimeout` seconds of inactivity and re-opens on the
   next operation. A value of `0` disables auto-close.
+- Reopening after an auto-close retries up to 5 times with a short, increasing delay
+  (`0.2s * attempt`) before giving up — a failure here is most often transient (e.g. the
+  host machine just woke from sleep and its volume hasn't finished remounting) and clears
+  within a second or two. If every attempt fails, `SQLiteCore` calls `onDatabaseUnavailable`
+  (see below) and leaves the block queue untouched rather than running queued work against a
+  nil `sqliteDB` — the next signal (a newly submitted block, or another auto-close cycle)
+  tries the whole reopen sequence again.
 
 ---
 
@@ -80,6 +87,7 @@ create table <table> (
 | `static var dateFormatter: DateFormatter` | ISO-8601-style formatter used for all stored dates. |
 | `func open(_ location: URL? = nil) async -> Bool` | Open the database file. `@discardableResult`. |
 | `func close()` | Close the database. |
+| `nonisolated var onDatabaseUnavailable: (@Sendable () -> Void)?` | Called if the file can't be reopened after auto-closing, even after the internal retries described above. AgileDB itself never posts a `Notification` for this — the callback is the only signal — so callers that want app-wide notification behavior (as `DBCore` does in Money Trak) wire that up themselves in the closure. |
 
 ### Keys & existence
 

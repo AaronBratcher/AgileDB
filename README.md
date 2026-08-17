@@ -294,6 +294,18 @@ let _ = publisher.sink(receiveCompletion: { _ in }) { ( results) in
 }
 ```
 
+## Auto-Close & Reopen ##
+- The database file automatically closes after `autoCloseTimeout` seconds of inactivity (default `2`; `0` disables it) and reopens transparently on the next operation.
+- If reopening fails right after an auto-close, AgileDB retries a few times with a short, increasing delay before giving up — this covers transient situations such as the host machine having just woken from sleep, where the volume can take a moment to become available again.
+- If every retry fails, `onDatabaseUnavailable` is called so your app can let the user know, instead of the operation silently stalling:
+```swift
+db.onDatabaseUnavailable = {
+    // called from a background thread; hop to the main actor before touching UI state
+    print("AgileDB couldn't reopen its database file")
+}
+```
+- AgileDB never posts a `Notification` for this itself — `onDatabaseUnavailable` is a plain closure so the choice of how to surface it (a `NotificationCenter` post, a delegate call, direct UI state, etc.) is left to your app.
+
 ## Low level methods ##
 
 ### Keys ###
@@ -602,6 +614,10 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+### 8.4 ###
+- Reopening the database file after an auto-close now retries a few times with a short, increasing delay instead of crashing (`fatalError`) on the very first failure — a failure right after a system wake is usually transient and clears within a second or two.
+- New `onDatabaseUnavailable: (@Sendable () -> Void)?` property, called if reopening still fails after those retries. See **Auto-Close & Reopen** above.
+
 ### 8.3 ###
 - `@Model` is now class-only; attaching it to a `struct` is a compile-time error. The macro also conforms the type to `Observable` and adds `@ObservationTracked` to eligible stored properties, so instances participate in SwiftUI observation.
 - `@Model` now generates `init(from:)`/`encode(to:)` itself instead of relying on the compiler's `Codable` synthesis (which `@ObservationTracked`'s computed properties disable). **Every property that will be persisted must have an explicit type annotation** as a result — macros can't infer a type from an initializer expression the way the compiler can.
