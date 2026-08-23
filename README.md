@@ -635,6 +635,9 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+### 8.5 ###
+- DBObjects now support Data and [Data] types.
+
 ### 8.4 ###
 - Reopening the database file after an auto-close now retries a few times with a short, increasing delay instead of crashing (`fatalError`) on the very first failure — a failure right after a system wake is usually transient and clears within a second or two.
 - New `onDatabaseUnavailable: (@Sendable () -> Void)?` property, called if reopening still fails after those retries. See **Auto-Close & Reopen** above.
