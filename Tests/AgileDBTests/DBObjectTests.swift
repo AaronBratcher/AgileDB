@@ -88,6 +88,13 @@ struct EncodingTransaction: DBObject {
 	var dates = [Date(), Date(), Date()]
 	var location = Location()
 	var locations = [Location(), Location(), Location()]
+	// Covers every byte value, which guarantees the base64 encoding of `imageData` below
+	// contains every character in the base64 alphabet - including '/', the character
+	// `JSONEncoder`'s default output escapes as '\/'. That escaping is exactly what
+	// corrupted a `Data` field the one time it was accidentally routed through
+	// `JSONEncoder` instead of `DBObjectEncoder`'s own base64 handling.
+	var imageData = Data((0...255).map(UInt8.init))
+	var imageDataItems = [Data([0x01, 0x02, 0x03]), Data((0...255).map(UInt8.init)), Data()]
 }
 
 struct Location: DBObject {
@@ -290,6 +297,48 @@ struct DBObjectTests {
 		#expect(transaction.amount == encodingTransaction.amount)
 		#expect(encodingTransaction.locations.count == 3)
 		#expect(encodingTransaction.locations[0].manager.firstName == "Store")
+
+		await removeDB(db)
+	}
+
+	@Test("Data property round-trips through save and load")
+	func testDataProperty() async throws {
+		let db = dbForTesting()
+
+		let transaction = EncodingTransaction()
+		await transaction.save(to: db)
+
+		let loadedTransaction = try #require(await EncodingTransaction(db: db, key: transaction.key))
+		#expect(loadedTransaction.imageData == transaction.imageData)
+
+		await removeDB(db)
+	}
+
+	@Test("Data property is stored as base64, not JSONEncoder's escaped-slash string form")
+	func testDataPropertyStoredAsRawBase64() async throws {
+		let db = dbForTesting()
+
+		let transaction = EncodingTransaction()
+		await transaction.save(to: db)
+
+		let storedDict = try await db.dictValueFromTable(EncodingTransaction.table, for: transaction.key)
+		let storedValue = try #require(storedDict["imageData"] as? String)
+
+		#expect(storedValue == transaction.imageData.base64EncodedString())
+		#expect(!storedValue.contains("\\/"))
+
+		await removeDB(db)
+	}
+
+	@Test("[Data] property round-trips through save and load")
+	func testDataArrayProperty() async throws {
+		let db = dbForTesting()
+
+		let transaction = EncodingTransaction()
+		await transaction.save(to: db)
+
+		let loadedTransaction = try #require(await EncodingTransaction(db: db, key: transaction.key))
+		#expect(loadedTransaction.imageDataItems == transaction.imageDataItems)
 
 		await removeDB(db)
 	}

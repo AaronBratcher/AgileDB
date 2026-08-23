@@ -144,6 +144,10 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 		store(value.base64EncodedString() as any Sendable, forKey: key)
 	}
 
+	func encodeDataArray(_ value: [Data], forKey key: K) throws {
+		store(value.map { $0.base64EncodedString() } as any Sendable, forKey: key)
+	}
+
 	func encode(_ value: Int64, forKey key: K) throws { }
 	func encode(_ value: UInt, forKey key: K) throws { }
 	func encode(_ value: UInt8, forKey key: K) throws { }
@@ -166,6 +170,10 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 			try encodeDBObject(value, forKey: key)
 		} else if let value = value as? [DBObject] {
 			try encodeDBObjectArray(value, forKey: key)
+		} else if let value = value as? Data {
+			try encode(value, forKey: key)
+		} else if let value = value as? [Data] {
+			try encodeDataArray(value, forKey: key)
 		} else {
 			let jsonData = try JSONEncoder().encode(value)
 			guard let jsonString = String(data: jsonData, encoding: .utf8) else {

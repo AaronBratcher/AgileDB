@@ -111,6 +111,27 @@ await category.delete(from: db)
 
 ```
 
+### Supported Property Types ###
+Most `Codable` property types just work. A few are given special storage so they round-trip cleanly through the JSON document each row is stored as:
+
+| Type | Stored as |
+| --- | --- |
+| `Bool`, `Int`, `Int8`/`16`/`32`, `Double`, `String` | Native value |
+| `Date`, `[Date]` | String(s), formatted consistently regardless of locale |
+| `Data`, `[Data]` | Base64 string(s) |
+| A `DBObject` property, or `[DBObject]` | Reference(s) by key - see "Object References & Cascade Delete" below |
+
+```swift
+struct Receipt: DBObject {
+    var key = UUID().uuidString
+    var note = ""
+    var photo: Data?
+    var thumbnails: [Data] = []
+}
+```
+
+Anything else Codable falls back to a generic JSON encoding, stored as a string.
+
 ### Schema Versioning ###
 Every save stamps the stored dictionary with the type's `currentSchemaVersion` (default 1). When loading data saved under an older version, `convertToCurrentSchema` is called automatically with the raw stored dictionary and the version it was saved with, and its return value is what actually gets decoded — including for nested `DBObject`s loaded as part of a parent.
 

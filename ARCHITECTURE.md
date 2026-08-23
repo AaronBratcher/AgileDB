@@ -203,6 +203,29 @@ the missing dictionaries are then fetched asynchronously from the database and c
 the decode is retried until it succeeds. This lets a synchronous `Codable` decode pull in
 asynchronously-loaded nested objects.
 
+### Supported property types
+
+`DBObjectEncoder`/`DBObjectDecoder` special-case the types below; anything else falls
+through to a generic `JSONEncoder`/`JSONDecoder` round-trip, stored as a JSON-text string
+inside the `value` document.
+
+| Type | Stored as |
+| --- | --- |
+| `Bool`, `Int`, `Int8`/`16`/`32`, `Double`, `String` | Native SQLite/JSON value |
+| `Date` | String, via `AgileDB.dateFormatter` |
+| `Data` | Base64 string |
+| `[Date]`, `[Int]`, `[Double]`, `[String]`, `[Data]` | JSON array of the element's stored form above |
+| `DBObject` | The nested object's `key` (see "Nested-object handling") |
+| `[DBObject]` | Array of keys |
+
+`Data` (and `[Data]`) must go through the encoder/decoder's own base64 handling rather
+than the generic `JSONEncoder`/`JSONDecoder` fallback: `JSONEncoder` encodes `Data` as a
+base64 **string**, but does so via its default `.dataEncodingStrategy` *and* escapes `/`
+as `\/` in its output — so a `Data` value routed through the generic fallback comes out
+base64-encoded twice, with the inner slashes already escaped, and `Data(base64Encoded:)`
+correctly refuses to decode it back on load. Both `encode<T>`/`decode<T>` dispatch on the
+runtime type before reaching the generic fallback specifically to avoid this.
+
 ### Schema versioning
 
 `DBObjectEncoder` stamps every saved dictionary with a `schemaVersion` field (the encoding

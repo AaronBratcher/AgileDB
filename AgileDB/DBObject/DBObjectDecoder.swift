@@ -309,6 +309,22 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 		return value
 	}
 
+	func decodeArray(_ type: [Data].Type, forKey key: K) throws -> [Data] {
+		guard let values = dict[key.stringValue] as? [any Sendable] else {
+			throw DictDecoderError.missingValueForKey(key.stringValue)
+		}
+
+		var dataValues = [Data]()
+		for value in values {
+			guard let stringValue = value as? String, let dataValue = Data(base64Encoded: stringValue) else {
+				throw DictDecoderError.missingValueForKey(key.stringValue)
+			}
+			dataValues.append(dataValue)
+		}
+
+		return dataValues
+	}
+
 	func decode(_ type: Date.Type, forKey key: K) throws -> Date {
 		let string = try decode(String.self, forKey: key)
 		if let date = AgileDB.dateFormatter.date(from: string) {
@@ -343,6 +359,8 @@ private class DictKeyedContainer<K: CodingKey>: KeyedDecodingContainerProtocol {
 			return try decodeObjectArray(dynamicType, forKey: key) as! T
 		} else if Data.self == T.self {
 			return try decode(Data.self, forKey: key) as! T
+		} else if [Data].self == T.self {
+			return try decodeArray([Data].self, forKey: key) as! T
 		} else if Date.self == T.self {
 			return try decode(Date.self, forKey: key) as! T
 		} else if URL.self == T.self {
