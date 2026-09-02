@@ -58,8 +58,8 @@ struct PublisherTests {
 
 		await addObjectsToDB(db)
 
-		let account1Condition = DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "A1" as any Sendable)
-		let account2Condition = DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "A2" as any Sendable)
+		let account1Condition = DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "A1")
+		let account2Condition = DBCondition(set: 0, objectKey: "accountKey", conditionOperator: .equal, value: "A2")
 
 		var results1: [DBResults<Transaction>] = []
 		var results2: [DBResults<Transaction>] = []

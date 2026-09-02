@@ -151,7 +151,7 @@ extension DBObject {
 
 	private static func dbObjectWithDict(_ dictionaryValue: [String: any Sendable], db: AgileDB, for key: String) async -> Self? {
 		var dictionaryValue = dictionaryValue
-		dictionaryValue["key"] = key as any Sendable
+		dictionaryValue["key"] = key
 
 		let savedSchemaVersion = (dictionaryValue["schemaVersion"] as? Int) ?? 1
 		if currentSchemaVersion > savedSchemaVersion {

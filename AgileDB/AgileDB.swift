@@ -782,17 +782,17 @@ public actor AgileDB {
 				let key = row.values[5] as! String?
 
 				var entryDict = [String: any Sendable]()
-				entryDict["timeStamp"] = timeStamp as any Sendable
+				entryDict["timeStamp"] = timeStamp
 				if originalDB != dbInstanceKey {
-					entryDict["originalDB"] = originalDB as any Sendable
+					entryDict["originalDB"] = originalDB
 				}
-				entryDict["tableName"] = tableName as any Sendable
-				entryDict["activity"] = activity as any Sendable
+				entryDict["tableName"] = tableName
+				entryDict["activity"] = activity
 				if let key = key {
-					entryDict["key"] = key as any Sendable
+					entryDict["key"] = key
 					if activity == "U" {
 						guard let dictValue = await dictValueFromTable(DBTable(name: tableName), for: key, includeDates: true) else { continue }
-						entryDict["value"] = dictValue as any Sendable
+						entryDict["value"] = dictValue
 					}
 				}
 
@@ -1394,9 +1394,9 @@ extension AgileDB {
 		else { return nil }
 
 		if includeDates {
-			if let value = row.values[1] as? String { valueDict["autoDeleteDateTime"] = value as any Sendable }
-			if let value = row.values[2] as? String { valueDict["addedDateTime"] = value as any Sendable }
-			if let value = row.values[3] as? String { valueDict["updatedDateTime"] = value as any Sendable }
+			if let value = row.values[1] as? String { valueDict["autoDeleteDateTime"] = value }
+			if let value = row.values[2] as? String { valueDict["addedDateTime"] = value }
+			if let value = row.values[3] as? String { valueDict["updatedDateTime"] = value }
 		}
 
 		return valueDict
@@ -1896,11 +1896,11 @@ private extension AgileDB {
 							switch columnType {
 							case SQLITE_TEXT:
 								let value = String(cString: sqlite3_column_text(dbps, index))
-								row.values.append(value as any Sendable)
+								row.values.append(value)
 							case SQLITE_INTEGER:
-								row.values.append(Int(sqlite3_column_int64(dbps, index)) as any Sendable)
+								row.values.append(Int(sqlite3_column_int64(dbps, index)))
 							case SQLITE_FLOAT:
-								row.values.append(Double(sqlite3_column_double(dbps, index)) as any Sendable)
+								row.values.append(Double(sqlite3_column_double(dbps, index)))
 							default:
 								row.values.append(nil)
 							}

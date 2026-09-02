@@ -25,7 +25,7 @@ class DBObjectEncoder: Encoder {
 		allowedKeys = codingKeys.isEmpty ? nil : Set(codingKeys.map { $0.stringValue })
 
 		try dbObject.encode(to: self)
-		dbDict["schemaVersion"] = type(of: dbObject).currentSchemaVersion as any Sendable
+		dbDict["schemaVersion"] = type(of: dbObject).currentSchemaVersion
 		return dbDict
 	}
 
@@ -70,12 +70,12 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 	func encodeNil(forKey key: K) throws { }
 
 	func encode(_ value: Bool, forKey key: K) throws {
-		store(value as any Sendable, forKey: key)
+		store(value, forKey: key)
 	}
 
 	func encodeDate(_ date: Date, forKey key: K) throws {
 		let dateString = AgileDB.stringValueForDate(date)
-		store(dateString as any Sendable, forKey: key)
+		store(dateString, forKey: key)
 	}
 
 	func encodeDateArray(_ dateArray: [Date], forKey key: K) throws {
@@ -85,11 +85,11 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 			dateStrings.append(dateString)
 		}
 
-		store(dateStrings as any Sendable, forKey: key)
+		store(dateStrings, forKey: key)
 	}
 
 	func encodeDBObject(_ dbObject: DBObject, forKey key: K) throws {
-		store(dbObject.key as any Sendable, forKey: key)
+		store(dbObject.key, forKey: key)
 	}
 
 	func encodeDBObjectArray(_ dbObjects: [DBObject], forKey key: K) throws {
@@ -98,54 +98,54 @@ private class KeyedContainer<K: CodingKey>: KeyedEncodingContainerProtocol {
 			objectKeys.append(dbObject.key)
 		}
 
-		store(objectKeys as any Sendable, forKey: key)
+		store(objectKeys, forKey: key)
 	}
 
 	func encode(_ value: String, forKey key: K) throws {
-		store(value as any Sendable, forKey: key)
+		store(value, forKey: key)
 	}
 
 	func encodeStringArray(_ value: [String], forKey key: K) throws {
-		store(value as any Sendable, forKey: key)
+		store(value, forKey: key)
 	}
 
 	func encodeIntArray(_ value: [Int], forKey key: K) throws {
-		store(value as any Sendable, forKey: key)
+		store(value, forKey: key)
 	}
 
 	func encodeDoubleArray(_ value: [Double], forKey key: K) throws {
-		store(value as any Sendable, forKey: key)
+		store(value, forKey: key)
 	}
 
 	func encode(_ value: Double, forKey key: K) throws {
-		store(value as any Sendable, forKey: key)
+		store(value, forKey: key)
 	}
 
 	func encode(_ value: Float, forKey key: K) throws { }
 
 	func encode(_ value: Int, forKey key: K) throws {
-		store(value as any Sendable, forKey: key)
+		store(value, forKey: key)
 	}
 
 	func encode(_ value: Int8, forKey key: K) throws {
-		store(Int(value) as any Sendable, forKey: key)
+		store(Int(value), forKey: key)
 	}
 
 	func encode(_ value: Int16, forKey key: K) throws {
-		store(Int(value) as any Sendable, forKey: key)
+		store(Int(value), forKey: key)
 	}
 
 	func encode(_ value: Int32, forKey key: K) throws {
-		store(Int(value) as any Sendable, forKey: key)
+		store(Int(value), forKey: key)
 	}
 
 	func encode(_ value: Data, forKey key: K) throws {
 		// Data is not JSON-serializable; persist as a base64 string in the value document.
-		store(value.base64EncodedString() as any Sendable, forKey: key)
+		store(value.base64EncodedString(), forKey: key)
 	}
 
 	func encodeDataArray(_ value: [Data], forKey key: K) throws {
-		store(value.map { $0.base64EncodedString() } as any Sendable, forKey: key)
+		store(value.map { $0.base64EncodedString() }, forKey: key)
 	}
 
 	func encode(_ value: Int64, forKey key: K) throws { }
