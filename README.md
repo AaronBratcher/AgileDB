@@ -228,6 +228,7 @@ Supported inside the closure:
 - `$0.property.contains(value)` for array/string properties (`.contains`)
 - `array.contains($0.property)` for membership checks (`.inList`)
 - `$0.property.almostEquals(value)` (or `value.almostEquals($0.property)`) for fuzzy string equality (`.almostEqual`) — see **Condition Operators** below
+- `$0.property.almostContains(value)` for fuzzy substring matching (`.almostContains`)
 - `&&` and `||` combining any number of the above, including mixed nesting — each `&&`-joined group becomes one condition `set` (ANDed), and `||` starts a new set (ORed), matching `DBCondition`'s own set-based semantics
 
 ```swift
@@ -458,16 +459,21 @@ let token = await AgileDB.shared.countKeysInTable(table) { results in
 | `.contains` | `...` | is an array holding the value, or text containing the value as a substring |
 | `.inList` | `()` | equals one of the values in the given array |
 | `.almostEqual` | `~=` | has the same letters and digits as the value, ignoring case, diacritics, punctuation and whitespace |
+| `.almostContains` | `~...` | contains the value's letters and digits within its own, ignoring case, diacritics, punctuation and whitespace |
 
-`.almostEqual` is for fuzzy matching of user-typed text: searching for "Sams Club" finds "Sam's Club", "SAMS-CLUB" and "sams club", but not "Sam's Club Gas" (it is equality, not substring). Both sides are reduced to lowercase alphanumerics by `AgileDB.alphanumericKey(_:)`; the same comparison is available in Swift as `String.almostEquals(_:)`.
+`.almostEqual` and `.almostContains` are for fuzzy matching of user-typed text. Both sides are reduced to lowercase letters and digits by `AgileDB.alphanumericKey(_:)` before comparing:
+- `.almostEqual` with "Sams Club" finds "Sam's Club", "SAMS-CLUB" and "sams club", but not "Sam's Club Gas".
+- `.almostContains` with "sams" finds all four — use it for search fields. A value with no letters or digits (e.g. "'") matches nothing.
+
+The same comparisons are available in Swift as `String.almostEquals(_:)` and `String.almostContains(_:)`.
 ```swift
 let payeeCondition = DBCondition(set: 0, objectKey: "name", conditionOperator: .almostEqual, value: "Sams Club")
 let keys = try await AgileDB.shared.keysInTable("payees", conditions: [payeeCondition])
 
 // or, with the macro
-let predicate = #Predicate<Payee> { $0.name.almostEquals(searchText) }
+let predicate = #Predicate<Payee> { $0.name.almostContains(searchText) }
 ```
-`.almostEqual` is evaluated by a SQL function over every row's value, so it can't use an index declared with `setIndexesForTable`.
+The fuzzy operators run a SQL function over every row's value, so they can't use an index declared with `setIndexesForTable` (`.contains` can't either — a leading `%` wildcard defeats the index). Combine them with indexed conditions in the same set to narrow the rows scanned.
 
 ### Values ###
 Data can be set or retrieved manually as shown here or your class/struct can conform to the DBObject protocol, documented above, and use the built-in init and save methods for greater ease and flexibility.
@@ -590,7 +596,7 @@ group by i.key
 ```
 
 ### Indexing properties as named columns ###
-To query a property by name directly (and to index it for performance), declare it with `setIndexesForTable(_:to:)`. Each indexed property becomes an indexed, generated column derived from the JSON document, so it can be used by name in SQL:
+To query a property by name directly (and to index it for performance), declare it with `setIndexesForTable(_:to:)`. Each indexed property becomes an indexed, generated column derived from the JSON document, so it can be used by name in SQL. `DBCondition`s and `sortOrder`s on an indexed property query that column automatically, so `keysInTable`, `countKeysInTable`, `publisher` and `@Query` use the index too:
 
 ```swift
 await db.setIndexesForTable("accounts", to: ["account"])
@@ -658,6 +664,11 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+### 8.7 ###
+- New `.almostContains` (`~...`) condition operator: fuzzy substring matching on letters and digits only ("sams" finds "Sam's Club"). Available in `#Predicate` as `$0.property.almostContains(value)`, and in Swift as `String.almostContains(_:)`.
+- Conditions and sort orders on a property declared with `setIndexesForTable` now query its generated column instead of `json_extract(value, …)`, so SQLite actually uses the index. Previously every condition was a full table scan regardless of declared indexes.
+- `#Predicate` compile errors now show their message instead of the internal error type.
+
 ### 8.6 ###
 - New `.almostEqual` (`~=`) condition operator for fuzzy string matching on letters and digits only, ignoring case, diacritics, punctuation and whitespace ("Sams Club" finds "Sam's Club"). Available in `#Predicate` as `$0.property.almostEquals(value)`, and in Swift as `String.almostEquals(_:)` / `AgileDB.alphanumericKey(_:)`.
 

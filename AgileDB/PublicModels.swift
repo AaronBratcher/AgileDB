@@ -76,6 +76,9 @@ public enum DBConditionOperator: String {
 	/// Fuzzy string equality: compares only the letters and digits of each side, ignoring case
 	/// and diacritics, so "Sams Club" matches "Sam's Club". See `AgileDB.alphanumericKey(_:)`.
 	case almostEqual = "~="
+	/// Fuzzy substring match on the same letters-and-digits form as `almostEqual`, so "sams"
+	/// matches "Sam's Club". A value with no letters or digits matches nothing.
+	case almostContains = "~..."
 }
 
 public struct DBCondition: @unchecked Sendable {

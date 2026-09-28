@@ -59,6 +59,8 @@ Supported inside the closure:
 - `array.contains($0.property)` for membership checks
 - `$0.property.almostEquals(value)` (or `value.almostEquals($0.property)`) for fuzzy string
   equality on letters and digits only (`.almostEqual`)
+- `$0.property.almostContains(value)` for fuzzy substring matching on letters and digits
+  only (`.almostContains`)
 - `&&` and `||` combining any number of the above, including mixed nesting (expanded to the
   set-based AND/OR form `DBCondition` uses)
 

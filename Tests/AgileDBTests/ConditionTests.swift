@@ -346,6 +346,93 @@ struct ConditionTests {
 		await removeDB(db)
 	}
 
+	@Test("almostContains matches alphanumeric substrings")
+	func almostContainsCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table80"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"payee\":\"Sam's Club\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"payee\":\"Sam's Club Gas\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"payee\":\"Costco\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey4", to: "{\"payee\":\"Café Rio\"}", autoDeleteAfter: nil)
+
+		// "Sams" is neither a raw substring of "Sam's Club" nor its whole normalized name.
+		let samsCondition = DBCondition(set: 0, objectKey: "payee", conditionOperator: .almostContains, value: "Sams")
+		let samsKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [samsCondition]))
+		#expect(Set(samsKeys) == ["testKey1", "testKey2"])
+
+		let clubGasCondition = DBCondition(set: 0, objectKey: "payee", conditionOperator: .almostContains, value: "club-gas")
+		let clubGasKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [clubGasCondition]))
+		#expect(clubGasKeys == ["testKey2"])
+
+		let cafeCondition = DBCondition(set: 0, objectKey: "payee", conditionOperator: .almostContains, value: "CAFE")
+		let cafeKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [cafeCondition]))
+		#expect(cafeKeys == ["testKey4"])
+
+		// No letters or digits: matches nothing rather than every row.
+		let punctuationCondition = DBCondition(set: 0, objectKey: "payee", conditionOperator: .almostContains, value: "'% _")
+		let punctuationKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [punctuationCondition]))
+		#expect(punctuationKeys.isEmpty)
+
+		await removeDB(db)
+	}
+
+	@Test("Indexed fields query their generated column so SQLite uses the index")
+	func indexedFieldUsesIndex() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table81"
+		await db.setIndexesForTable(table, to: ["account", "arrayValue"])
+		await db.setValueInTable(table, for: "testKey1", to: "{\"account\":\"ACCT1\",\"note\":\"a\",\"arrayValue\":[1,2]}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"account\":\"ACCT2\",\"note\":\"b\",\"arrayValue\":[3,4]}", autoDeleteAfter: nil)
+
+		let accountCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .equal, value: "ACCT1")
+		let sql = try #require(await db.keysInTableSQL(table: table, sortOrder: "account desc", conditions: [accountCondition]))
+		#expect(sql.contains("\"account\" = 'ACCT1'"))
+		#expect(!sql.contains("json_extract(value, '$.account')"))
+
+		let plan = try await db.sqlSelect("explain query plan \(sql)")
+		let planText = plan.map({ $0.values.compactMap({ $0 as? String }).joined(separator: " ") }).joined(separator: "\n")
+		#expect(planText.contains("USING INDEX idx_table81_account"), "\(planText)")
+
+		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [accountCondition]))
+		#expect(keys == ["testKey1"])
+
+		// Unindexed fields keep using json_extract.
+		let noteCondition = DBCondition(set: 0, objectKey: "note", conditionOperator: .equal, value: "b")
+		let noteSQL = try #require(await db.keysInTableSQL(table: table, sortOrder: nil, conditions: [noteCondition]))
+		#expect(noteSQL.contains("json_extract(value, '$.note')"))
+
+		// An indexed JSON array still gets array-membership `contains`, not a text match.
+		let arrayCondition = DBCondition(set: 0, objectKey: "arrayValue", conditionOperator: .contains, value: 3)
+		let arrayKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [arrayCondition]))
+		#expect(arrayKeys == ["testKey2"])
+
+		// The fuzzy operators work over the generated column too.
+		let fuzzyCondition = DBCondition(set: 0, objectKey: "account", conditionOperator: .almostContains, value: "acct-2")
+		let fuzzyKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [fuzzyCondition]))
+		#expect(fuzzyKeys == ["testKey2"])
+
+		await removeDB(db)
+	}
+
+	@Test("Indexed columns are rebuilt after a table is dropped and recreated")
+	func indexedFieldAfterDropTable() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table82"
+		await db.setIndexesForTable(table, to: ["account"])
+		await db.setValueInTable(table, for: "testKey1", to: "{\"account\":\"ACCT1\"}", autoDeleteAfter: nil)
+		await db.dropTable(table)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"account\":\"ACCT1\"}", autoDeleteAfter: nil)
+
+		let condition = DBCondition(set: 0, objectKey: "account", conditionOperator: .equal, value: "ACCT1")
+		let keys = try #require(await db.keysInTable(table, sortOrder: "account", conditions: [condition]))
+		#expect(keys == ["testKey2"])
+
+		await removeDB(db)
+	}
+
 	@Test("alphanumericKey normalization")
 	func alphanumericKeyNormalization() {
 		#expect(AgileDB.alphanumericKey("Sam's Club") == "samsclub")
@@ -354,5 +441,8 @@ struct ConditionTests {
 		#expect(AgileDB.alphanumericKey("!!!") == "")
 		#expect("Sams Club".almostEquals("sam's club"))
 		#expect(!"Sams Club".almostEquals("Sam's Club Gas"))
+		#expect("Sam's Club Gas".almostContains("sams club"))
+		#expect(!"Sam's Club".almostContains("costco"))
+		#expect(!"Sam's Club".almostContains("--"))
 	}
 }

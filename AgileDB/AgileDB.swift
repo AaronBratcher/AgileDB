@@ -104,6 +104,9 @@ public actor AgileDB {
 	private var dbInstanceKey = ""
 	private var tables = DBTables()
 	private var indexes = [String: [String]]()
+	/// Per table, the declared index fields that exist as generated columns. Conditions and sort
+	/// orders on these name the column (not json_extract) so SQLite can use the index.
+	private var indexedColumns = [String: Set<String>]()
 	private var syncingEnabled = false
 	private var publishers = [UpdatablePublisher]()
 	private lazy var autoDeleteTimer: RepeatingTimer = {
@@ -595,6 +598,7 @@ public actor AgileDB {
 		}
 
 		tables.dropTable(table)
+		indexedColumns[table.name] = nil
 
 		if syncingEnabled && unsyncedTables.doesNotContain(table) {
 			let now = AgileDB.stringValueForDate(Date())
@@ -1139,7 +1143,7 @@ extension AgileDB {
 		}
 
 		if let sortOrder = sortOrder {
-			whereClause += " order by \(jsonSortClause(sortOrder))"
+			whereClause += " order by \(jsonSortClause(sortOrder, table: table))"
 		}
 
 		let sql = selectClause + whereClause
@@ -1150,13 +1154,13 @@ extension AgileDB {
 	}
 
 	/// Translates a comma-delimited list of property names (each optionally followed by
-	/// `asc`/`desc`) into json_extract expressions over the `value` document.
-	private func jsonSortClause(_ sortOrder: String) -> String {
+	/// `asc`/`desc`) into column or json_extract expressions (see `fieldExpression`).
+	private func jsonSortClause(_ sortOrder: String, table: DBTable) -> String {
 		var terms: [String] = []
 		for part in sortOrder.split(separator: ",") {
 			let tokens = part.split(separator: " ").map(String.init).filter({ $0.isNotEmpty })
 			guard let field = tokens.first else { continue }
-			var term = fieldExpression(for: field)
+			var term = fieldExpression(for: field, in: table)
 			if tokens.count > 1 {
 				let direction = tokens[1].lowercased()
 				if direction == "asc" || direction == "desc" {
@@ -1169,12 +1173,19 @@ extension AgileDB {
 		return terms.joined(separator: ", ")
 	}
 
+	private static let reservedColumns: Set<String> = ["key", "addedDateTime", "updatedDateTime", "autoDeleteDateTime"]
+
 	/// `key` and the date fields are stored as real columns; every other property lives in
-	/// the `value` JSON document and is reached with json_extract.
-	private func fieldExpression(for objectKey: String) -> String {
-		let reservedColumns: Set<String> = ["key", "addedDateTime", "updatedDateTime", "autoDeleteDateTime"]
-		if reservedColumns.contains(objectKey) {
+	/// the `value` JSON document. An indexed property is reached through its generated column,
+	/// which is defined as the same json_extract, so results are identical - but SQLite only
+	/// uses an index when the query names the column, never for the equivalent json_extract.
+	private func fieldExpression(for objectKey: String, in table: DBTable) -> String {
+		if AgileDB.reservedColumns.contains(objectKey) {
 			return objectKey
+		}
+
+		if indexedColumns[table.name]?.contains(objectKey) == true {
+			return "\"\(objectKey)\""
 		}
 
 		return "json_extract(value, '$.\(objectKey)')"
@@ -1206,8 +1217,10 @@ extension AgileDB {
 
 	private func conditionClause(from condition: DBCondition, table: DBTable) -> String {
 		let path = "'$.\(condition.objectKey)'"
-		let extract = fieldExpression(for: condition.objectKey)
-		let isReserved = extract == condition.objectKey
+		let extract = fieldExpression(for: condition.objectKey, in: table)
+		// Indexed properties still live in the JSON document, so only the reserved columns
+		// skip the JSON-array handling below.
+		let isReserved = AgileDB.reservedColumns.contains(condition.objectKey)
 		var whereClause = ""
 
 		switch condition.conditionOperator {
@@ -1235,6 +1248,16 @@ extension AgileDB {
 				whereClause += " agile_alnum(\(extract)) = '\(esc(AgileDB.alphanumericKey(stringValue)))'"
 			} else {
 				whereClause += " \(extract) = \(condition.value)"
+			}
+
+		case .almostContains:
+			if let stringValue = condition.value as? String {
+				let normalized = AgileDB.alphanumericKey(stringValue)
+				// A search with no letters or digits would be like '%%' and match every row.
+				// Normalized text is alphanumeric only, so it needs no LIKE escaping.
+				whereClause += normalized.isEmpty ? " 0" : " agile_alnum(\(extract)) like '%\(normalized)%'"
+			} else {
+				whereClause += " \(extract) like '%\(condition.value)%'"
 			}
 
 		case .inList:
@@ -1601,6 +1624,11 @@ extension AgileDB {
 				_ = await sqlExecute("CREATE INDEX \(indexName) on \(table)(\(columnsList))")
 			}
 		}
+
+		// Only fields that actually exist as columns may be named in queries; a failed
+		// alter table leaves that field on json_extract.
+		let declaredFields = tableIndexes.flatMap({ $0.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) })
+		indexedColumns[table.name] = Set(await columnNames(in: table)).intersection(declaredFields)
 	}
 
 	private func columnNames(in table: DBTable) async -> [String] {
@@ -2158,7 +2186,7 @@ private extension AgileDB {
 		/// SQL functions backing condition operators that SQLite can't express natively.
 		/// Registered per connection, so this runs on every open (including reopen after auto-close).
 		private func registerFunctions() {
-			// agile_alnum(text) -> AgileDB.alphanumericKey(text), used by `.almostEqual`.
+			// agile_alnum(text) -> AgileDB.alphanumericKey(text), used by `.almostEqual`/`.almostContains`.
 			// The callback is a C function pointer and can't capture, so SQLITE_TRANSIENT is spelled out.
 			sqlite3_create_function_v2(sqliteDB, "agile_alnum", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC, nil, { context, _, argv in
 				guard let argv, let text = sqlite3_value_text(argv[0]) else {

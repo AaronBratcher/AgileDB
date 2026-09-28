@@ -43,7 +43,9 @@ create table <table> (
 - Conditions and sort orders are translated to `json_extract(value, '$.field')`
   expressions. The `contains` operator resolves at query time via `json_type`: array
   membership (`json_each`) for JSON arrays, substring `like` for JSON text.
-- The `almostEqual` operator compares `agile_alnum(json_extract(…)) = '<normalized value>'`.
+- The `almostEqual` operator compares `agile_alnum(<field>) = '<normalized value>'`, and
+  `almostContains` compares `agile_alnum(<field>) like '%<normalized value>%'` (or `0`, when
+  the normalized value is empty, so it can't match every row).
   `agile_alnum` is a deterministic scalar function registered with
   `sqlite3_create_function_v2` in `SQLiteCore.registerFunctions()`, called from `openFile()`
   so every connection — including one reopened after auto-close — has it. It wraps
@@ -51,6 +53,15 @@ create table <table> (
   only); the search value is normalized once in Swift so only the stored side goes through
   SQL. Because the function wraps the column, these conditions scan rather than use a
   `setIndexesForTable` index.
+- `fieldExpression(for:in:)` decides how a condition or sort term names a property: the
+  reserved columns by name; an indexed property by its quoted generated column; anything
+  else as `json_extract(value, '$.field')`. SQLite only uses an index when the query names
+  the column — the equivalent `json_extract` expression is always a full scan — so this is
+  what makes `setIndexesForTable` indexes effective for `DBCondition`s. `indexedColumns`
+  records, per table, which declared fields actually exist as columns; it's refreshed by
+  `createIndexesForTable` (on `setIndexesForTable` and on table creation) and cleared by
+  `dropTable`. Indexed properties are still JSON-backed, so `contains` keeps its
+  array-membership path for them.
 - Declaring indexes (`setIndexesForTable`) adds a `VIRTUAL` generated column over
   `json_extract(value, '$.field')` and indexes it, giving both index-backed lookups and
   real column names usable from direct SQL.
@@ -423,6 +434,8 @@ Supported inside the closure:
 - `$0.property.almostEquals(value)` / `value.almostEquals($0.property)` → `.almostEqual`.
   `almostEquals` is a real `public extension String` method (in `DBPredicate.swift`) so the
   closure type-checks; the macro only reads its syntax and never calls it.
+- `$0.property.almostContains(value)` → `.almostContains`. Unlike `almostEquals` it isn't
+  symmetric, so `value.almostContains($0.property)` is a compile-time error.
 - `&&`/`||` combining any number of the above, expanded to `DBCondition`'s set-based AND/OR
   form: each `&&`-joined group becomes one condition `set` (ANDed); `||` starts a new set
   (ORed against the others).
@@ -463,7 +476,7 @@ directly.
 | --- | --- |
 | `struct DBTable` | Identifies a table. `Equatable`, `Hashable`, `Sendable`, `ExpressibleByStringLiteral`, `CustomStringConvertible`. Rejects empty/reserved names. |
 | `struct DBCondition` | A query condition: `set` (OR-group page), `objectKey`, `conditionOperator`, and `value`. Conditions in the same `set` are AND'd; different sets are OR'd. |
-| `enum DBConditionOperator: String` | `equal` `=`, `notEqual` `<>`, `lessThan` `<`, `greaterThan` `>`, `lessThanOrEqual` `<=`, `greaterThanOrEqual` `>=`, `contains` `...`, `inList` `()`, `almostEqual` `~=` (fuzzy: letters and digits only, ignoring case and diacritics). |
+| `enum DBConditionOperator: String` | `equal` `=`, `notEqual` `<>`, `lessThan` `<`, `greaterThan` `>`, `lessThanOrEqual` `<=`, `greaterThanOrEqual` `>=`, `contains` `...`, `inList` `()`, `almostEqual` `~=` and `almostContains` `~...` (fuzzy equality / substring on letters and digits only, ignoring case and diacritics). |
 | `struct DBRow` | A raw query row: `values: [(any Sendable)?]`. |
 | `struct DBReference` | A `table` + `key` pair identifying a specific `DBObject`. Used for `internalReferences`/`externalReferences` bookkeeping and reported in `DBDeleteResult.partial(retained:)`. `Equatable`, `Hashable`, `Sendable`. |
 | `enum DBDeleteResult` | Outcome of `DBObject.delete(from:cascadeDelete:)`: `.failed`, `.completed`, or `.partial(retained: [DBReference])`. |

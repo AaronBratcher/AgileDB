@@ -31,4 +31,19 @@ public extension String {
 	func almostEquals(_ other: String) -> Bool {
 		return AgileDB.alphanumericKey(self) == AgileDB.alphanumericKey(other)
 	}
+
+	/**
+	True when `other`'s letters and digits appear, in order, within this string's letters and
+	digits, ignoring case, diacritics, punctuation and whitespace ("Sam's Club".almostContains("sams")
+	is true). A string with no letters or digits is never contained.
+
+	Inside `#Predicate` this becomes an `.almostContains` condition evaluated by SQLite:
+	```swift
+	#Predicate<Payee> { $0.name.almostContains(searchText) }
+	```
+	*/
+	func almostContains(_ other: String) -> Bool {
+		let needle = AgileDB.alphanumericKey(other)
+		return !needle.isEmpty && AgileDB.alphanumericKey(self).contains(needle)
+	}
 }

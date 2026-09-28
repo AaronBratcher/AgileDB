@@ -37,8 +37,11 @@ enum PredicateDiagnostic: DiagnosticMessage {
 	var severity: DiagnosticSeverity { .error }
 }
 
-struct PredicateExpansionError: Error {
+struct PredicateExpansionError: Error, CustomStringConvertible {
 	let diagnostic: PredicateDiagnostic
+
+	// Thrown macro errors are shown to the user via their description.
+	var description: String { diagnostic.message }
 }
 
 /// Builds a `DBPredicate<T>` from a single-expression closure. See the `#Predicate` macro
@@ -221,6 +224,13 @@ private func parseMethodCall(_ functionCall: FunctionCallExprSyntax, paramName: 
 
 		if let path = propertyPath(argument, paramName: paramName) {
 			return Leaf(objectKey: path, conditionOperator: ".almostEqual", valueExpr: receiver.trimmedDescription)
+		}
+
+		throw PredicateExpansionError(diagnostic: .unsupportedExpression(functionCall.trimmedDescription))
+	case "almostContains":
+		// Not symmetric: only "property contains value" maps to a condition.
+		if let path = propertyPath(receiver, paramName: paramName) {
+			return Leaf(objectKey: path, conditionOperator: ".almostContains", valueExpr: argument.trimmedDescription)
 		}
 
 		throw PredicateExpansionError(diagnostic: .unsupportedExpression(functionCall.trimmedDescription))

@@ -163,4 +163,25 @@ struct PredicateTests {
 
 		await removeDB(db)
 	}
+
+	@Test("almostContains matches partial text ignoring punctuation")
+	func testAlmostContainsMatchesPartially() async throws {
+		let db = dbForTesting()
+
+		let sams = PredicateAccount()
+		sams.name = "Sam's Club"
+		await sams.save(to: db)
+
+		let other = PredicateAccount()
+		other.name = "Costco"
+		await other.save(to: db)
+
+		let searchText = "sams"
+		let predicate = #Predicate<PredicateAccount> { $0.name.almostContains(searchText) }
+		let keys = try await db.keysInTable(PredicateAccount.table, conditions: predicate.conditions)
+
+		#expect(keys == [sams.key])
+
+		await removeDB(db)
+	}
 }

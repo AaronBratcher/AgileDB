@@ -155,6 +155,35 @@ final class PredicateMacroTests: XCTestCase {
 		)
 	}
 
+	func testAlmostContainsOnProperty() {
+		assertMacroExpansion(
+			"""
+			#Predicate<Payee> { $0.name.almostContains(searchText) }
+			""",
+			expandedSource: """
+			DBPredicate<Payee>(conditions: [
+			    DBCondition(set: 0, objectKey: "name", conditionOperator: .almostContains, value: searchText as any Sendable)
+			    ])
+			""",
+			macros: macros
+		)
+	}
+
+	func testAlmostContainsWithPropertyAsArgumentIsUnsupported() {
+		assertMacroExpansion(
+			"""
+			#Predicate<Payee> { searchText.almostContains($0.name) }
+			""",
+			expandedSource: """
+			#Predicate<Payee> { searchText.almostContains($0.name) }
+			""",
+			diagnostics: [
+				DiagnosticSpec(message: "#Predicate does not support this expression: searchText.almostContains($0.name)", line: 1, column: 1)
+			],
+			macros: macros
+		)
+	}
+
 	func testNestedPropertyPath() {
 		assertMacroExpansion(
 			"""
