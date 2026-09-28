@@ -227,6 +227,7 @@ Supported inside the closure:
 - Comparisons `==`, `!=`, `<`, `>`, `<=`, `>=` between a property path (`$0.property` or `$0.nested.property`) and a value, in either order
 - `$0.property.contains(value)` for array/string properties (`.contains`)
 - `array.contains($0.property)` for membership checks (`.inList`)
+- `$0.property.almostEquals(value)` (or `value.almostEquals($0.property)`) for fuzzy string equality (`.almostEqual`) — see **Condition Operators** below
 - `&&` and `||` combining any number of the above, including mixed nesting — each `&&`-joined group becomes one condition `set` (ANDed), and `||` starts a new set (ORed), matching `DBCondition`'s own set-based semantics
 
 ```swift
@@ -446,6 +447,28 @@ let token = await AgileDB.shared.countKeysInTable(table) { results in
 
 
 
+### Condition Operators ###
+
+| Operator | Raw value | Matches when the property… |
+| --- | --- | --- |
+| `.equal` | `=` | equals the value |
+| `.notEqual` | `<>` | does not equal the value |
+| `.lessThan` / `.greaterThan` | `<` / `>` | compares less / greater |
+| `.lessThanOrEqual` / `.greaterThanOrEqual` | `<=` / `>=` | compares less-or-equal / greater-or-equal |
+| `.contains` | `...` | is an array holding the value, or text containing the value as a substring |
+| `.inList` | `()` | equals one of the values in the given array |
+| `.almostEqual` | `~=` | has the same letters and digits as the value, ignoring case, diacritics, punctuation and whitespace |
+
+`.almostEqual` is for fuzzy matching of user-typed text: searching for "Sams Club" finds "Sam's Club", "SAMS-CLUB" and "sams club", but not "Sam's Club Gas" (it is equality, not substring). Both sides are reduced to lowercase alphanumerics by `AgileDB.alphanumericKey(_:)`; the same comparison is available in Swift as `String.almostEquals(_:)`.
+```swift
+let payeeCondition = DBCondition(set: 0, objectKey: "name", conditionOperator: .almostEqual, value: "Sams Club")
+let keys = try await AgileDB.shared.keysInTable("payees", conditions: [payeeCondition])
+
+// or, with the macro
+let predicate = #Predicate<Payee> { $0.name.almostEquals(searchText) }
+```
+`.almostEqual` is evaluated by a SQL function over every row's value, so it can't use an index declared with `setIndexesForTable`.
+
 ### Values ###
 Data can be set or retrieved manually as shown here or your class/struct can conform to the DBObject protocol, documented above, and use the built-in init and save methods for greater ease and flexibility.
 
@@ -635,6 +658,9 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
+### 8.6 ###
+- New `.almostEqual` (`~=`) condition operator for fuzzy string matching on letters and digits only, ignoring case, diacritics, punctuation and whitespace ("Sams Club" finds "Sam's Club"). Available in `#Predicate` as `$0.property.almostEquals(value)`, and in Swift as `String.almostEquals(_:)` / `AgileDB.alphanumericKey(_:)`.
+
 ### 8.5 ###
 - DBObjects now support Data and [Data] types.
 

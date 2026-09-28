@@ -43,6 +43,14 @@ create table <table> (
 - Conditions and sort orders are translated to `json_extract(value, '$.field')`
   expressions. The `contains` operator resolves at query time via `json_type`: array
   membership (`json_each`) for JSON arrays, substring `like` for JSON text.
+- The `almostEqual` operator compares `agile_alnum(json_extract(…)) = '<normalized value>'`.
+  `agile_alnum` is a deterministic scalar function registered with
+  `sqlite3_create_function_v2` in `SQLiteCore.registerFunctions()`, called from `openFile()`
+  so every connection — including one reopened after auto-close — has it. It wraps
+  `AgileDB.alphanumericKey(_:)` (case- and diacritic-folded, `CharacterSet.alphanumerics`
+  only); the search value is normalized once in Swift so only the stored side goes through
+  SQL. Because the function wraps the column, these conditions scan rather than use a
+  `setIndexesForTable` index.
 - Declaring indexes (`setIndexesForTable`) adds a `VIRTUAL` generated column over
   `json_extract(value, '$.field')` and indexes it, giving both index-backed lookups and
   real column names usable from direct SQL.
@@ -161,6 +169,7 @@ database has a generated `instanceKey`, and changes are journaled in `__synclog`
 | `nonisolated func esc(_:) -> String` | Escape single quotes for inline SQL. |
 | `static func stringValueForDate(_:) -> String` | Format a `Date` for storage. |
 | `static func dateValueForString(_:) -> Date?` | Parse a stored date string. |
+| `static func alphanumericKey(_:) -> String` | Lowercased, diacritic-folded, letters-and-digits-only form of a string; what `.almostEqual` compares on. |
 
 ---
 
@@ -411,6 +420,9 @@ Supported inside the closure:
   `$0.nested.property`) and a value, in either order
 - `$0.property.contains(value)` for array/string properties, and `array.contains($0.property)`
   for membership checks
+- `$0.property.almostEquals(value)` / `value.almostEquals($0.property)` → `.almostEqual`.
+  `almostEquals` is a real `public extension String` method (in `DBPredicate.swift`) so the
+  closure type-checks; the macro only reads its syntax and never calls it.
 - `&&`/`||` combining any number of the above, expanded to `DBCondition`'s set-based AND/OR
   form: each `&&`-joined group becomes one condition `set` (ANDed); `||` starts a new set
   (ORed against the others).
@@ -451,7 +463,7 @@ directly.
 | --- | --- |
 | `struct DBTable` | Identifies a table. `Equatable`, `Hashable`, `Sendable`, `ExpressibleByStringLiteral`, `CustomStringConvertible`. Rejects empty/reserved names. |
 | `struct DBCondition` | A query condition: `set` (OR-group page), `objectKey`, `conditionOperator`, and `value`. Conditions in the same `set` are AND'd; different sets are OR'd. |
-| `enum DBConditionOperator: String` | `equal` `=`, `notEqual` `<>`, `lessThan` `<`, `greaterThan` `>`, `lessThanOrEqual` `<=`, `greaterThanOrEqual` `>=`, `contains` `...`, `inList` `()`. |
+| `enum DBConditionOperator: String` | `equal` `=`, `notEqual` `<>`, `lessThan` `<`, `greaterThan` `>`, `lessThanOrEqual` `<=`, `greaterThanOrEqual` `>=`, `contains` `...`, `inList` `()`, `almostEqual` `~=` (fuzzy: letters and digits only, ignoring case and diacritics). |
 | `struct DBRow` | A raw query row: `values: [(any Sendable)?]`. |
 | `struct DBReference` | A `table` + `key` pair identifying a specific `DBObject`. Used for `internalReferences`/`externalReferences` bookkeeping and reported in `DBDeleteResult.partial(retained:)`. `Equatable`, `Hashable`, `Sendable`. |
 | `enum DBDeleteResult` | Outcome of `DBObject.delete(from:cascadeDelete:)`: `.failed`, `.completed`, or `.partial(retained: [DBReference])`. |

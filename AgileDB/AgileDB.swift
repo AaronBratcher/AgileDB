@@ -952,6 +952,15 @@ public actor AgileDB {
 		return AgileDB.dateFormatter.date(from: stringValue)
 	}
 
+	/**
+	The form `.almostEqual` compares on: lowercased, with diacritics folded and everything but
+	letters and digits removed, so "Sam's Club", "sams club" and "SAMS-CLUB" all become "samsclub".
+	*/
+	public static func alphanumericKey(_ string: String) -> String {
+		let folded = string.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+		return String(String.UnicodeScalarView(folded.unicodeScalars.filter(CharacterSet.alphanumerics.contains)))
+	}
+
 	// MARK: - Internal Initialization Methods
 	private func openDB() async -> BoolResults {
 		if dbCore.isOpen {
@@ -1217,6 +1226,15 @@ extension AgileDB {
 				}
 			} else if !isReserved {
 				whereClause += "key in (select jt.key from \(table.name) jt, json_each(jt.value, \(path)) je where je.value = \(condition.value))"
+			}
+
+		case .almostEqual:
+			// agile_alnum is registered on every connection in SQLiteCore.openFile(). The search
+			// value is normalized once here; only the stored value goes through the SQL function.
+			if let stringValue = condition.value as? String {
+				whereClause += " agile_alnum(\(extract)) = '\(esc(AgileDB.alphanumericKey(stringValue)))'"
+			} else {
+				whereClause += " \(extract) = \(condition.value)"
 			}
 
 		case .inList:
@@ -2130,10 +2148,27 @@ private extension AgileDB {
 			// crashes, only vulnerable to an OS-level crash losing the last commit).
 			sqlite3_exec(sqliteDB, "PRAGMA journal_mode=WAL", nil, nil, nil)
 			sqlite3_exec(sqliteDB, "PRAGMA synchronous=NORMAL", nil, nil, nil)
+			registerFunctions()
 
 			autoCloseTimer?.resume()
 			automaticallyClosed = false
 			return BoolResults.success(true)
+		}
+
+		/// SQL functions backing condition operators that SQLite can't express natively.
+		/// Registered per connection, so this runs on every open (including reopen after auto-close).
+		private func registerFunctions() {
+			// agile_alnum(text) -> AgileDB.alphanumericKey(text), used by `.almostEqual`.
+			// The callback is a C function pointer and can't capture, so SQLITE_TRANSIENT is spelled out.
+			sqlite3_create_function_v2(sqliteDB, "agile_alnum", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC, nil, { context, _, argv in
+				guard let argv, let text = sqlite3_value_text(argv[0]) else {
+					sqlite3_result_null(context)
+					return
+				}
+
+				let normalized = AgileDB.alphanumericKey(String(cString: text))
+				sqlite3_result_text(context, normalized, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+			}, nil, nil, nil)
 		}
 
 		/// Retries `openFile()` a few times with a short, increasing delay before giving up.

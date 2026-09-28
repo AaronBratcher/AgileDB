@@ -164,7 +164,7 @@ private func parseBoolExpr(_ expr: ExprSyntax, paramName: String) throws -> Bool
 	}
 
 	if let functionCall = expr.as(FunctionCallExprSyntax.self) {
-		return .leaf(try parseContainsCall(functionCall, paramName: paramName))
+		return .leaf(try parseMethodCall(functionCall, paramName: paramName))
 	}
 
 	throw PredicateExpansionError(diagnostic: .unsupportedExpression(expr.trimmedDescription))
@@ -201,9 +201,8 @@ private func parseComparison(_ infix: InfixOperatorExprSyntax, operatorText: Str
 	throw PredicateExpansionError(diagnostic: .unsupportedExpression(infix.trimmedDescription))
 }
 
-private func parseContainsCall(_ functionCall: FunctionCallExprSyntax, paramName: String) throws -> Leaf {
+private func parseMethodCall(_ functionCall: FunctionCallExprSyntax, paramName: String) throws -> Leaf {
 	guard let member = functionCall.calledExpression.as(MemberAccessExprSyntax.self),
-	      member.declName.baseName.text == "contains",
 	      let receiver = member.base,
 	      functionCall.arguments.count == 1,
 	      let argument = functionCall.arguments.first?.expression
@@ -211,6 +210,26 @@ private func parseContainsCall(_ functionCall: FunctionCallExprSyntax, paramName
 		throw PredicateExpansionError(diagnostic: .unsupportedExpression(functionCall.trimmedDescription))
 	}
 
+	switch member.declName.baseName.text {
+	case "contains":
+		return try parseContainsCall(functionCall, receiver: receiver, argument: argument, paramName: paramName)
+	case "almostEquals":
+		// Symmetric, so the property may be on either side.
+		if let path = propertyPath(receiver, paramName: paramName) {
+			return Leaf(objectKey: path, conditionOperator: ".almostEqual", valueExpr: argument.trimmedDescription)
+		}
+
+		if let path = propertyPath(argument, paramName: paramName) {
+			return Leaf(objectKey: path, conditionOperator: ".almostEqual", valueExpr: receiver.trimmedDescription)
+		}
+
+		throw PredicateExpansionError(diagnostic: .unsupportedExpression(functionCall.trimmedDescription))
+	default:
+		throw PredicateExpansionError(diagnostic: .unsupportedExpression(functionCall.trimmedDescription))
+	}
+}
+
+private func parseContainsCall(_ functionCall: FunctionCallExprSyntax, receiver: ExprSyntax, argument: ExprSyntax, paramName: String) throws -> Leaf {
 	if let path = propertyPath(receiver, paramName: paramName) {
 		return Leaf(objectKey: path, conditionOperator: ".contains", valueExpr: argument.trimmedDescription)
 	}

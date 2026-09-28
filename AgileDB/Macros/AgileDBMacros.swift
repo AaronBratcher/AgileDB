@@ -57,6 +57,8 @@ Supported inside the closure:
   `$0.nested.property`) and a value expression, in either order
 - `$0.property.contains(value)` for array/string properties
 - `array.contains($0.property)` for membership checks
+- `$0.property.almostEquals(value)` (or `value.almostEquals($0.property)`) for fuzzy string
+  equality on letters and digits only (`.almostEqual`)
 - `&&` and `||` combining any number of the above, including mixed nesting (expanded to the
   set-based AND/OR form `DBCondition` uses)
 

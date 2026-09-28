@@ -17,3 +17,18 @@ public struct DBPredicate<T: DBObject>: Sendable {
 		self.conditions = conditions
 	}
 }
+
+public extension String {
+	/**
+	True when both strings have the same letters and digits, ignoring case, diacritics,
+	punctuation and whitespace ("Sams Club".almostEquals("Sam's Club") is true).
+
+	Inside `#Predicate` this becomes an `.almostEqual` condition evaluated by SQLite:
+	```swift
+	#Predicate<Payee> { $0.name.almostEquals("Sams Club") }
+	```
+	*/
+	func almostEquals(_ other: String) -> Bool {
+		return AgileDB.alphanumericKey(self) == AgileDB.alphanumericKey(other)
+	}
+}

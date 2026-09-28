@@ -302,4 +302,57 @@ struct ConditionTests {
 
 		await removeDB(db)
 	}
+
+	@Test("almostEqual matches on alphanumerics only")
+	func almostEqualCondition() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table78"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"payee\":\"Sam's Club\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey2", to: "{\"payee\":\"SAMS-CLUB\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey3", to: "{\"payee\":\"Sam's Club Gas\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey4", to: "{\"payee\":\"Café Rio\"}", autoDeleteAfter: nil)
+		await db.setValueInTable(table, for: "testKey5", to: "{\"numValue\":5}", autoDeleteAfter: nil)
+
+		let samsCondition = DBCondition(set: 0, objectKey: "payee", conditionOperator: .almostEqual, value: "Sams Club")
+		let samsKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [samsCondition]))
+		#expect(Set(samsKeys) == ["testKey1", "testKey2"], "equality, not substring: 'Sam's Club Gas' must not match")
+
+		// The search value is normalized too, and diacritics fold.
+		let cafeCondition = DBCondition(set: 0, objectKey: "payee", conditionOperator: .almostEqual, value: "cafe' rio!")
+		let cafeKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [cafeCondition]))
+		#expect(cafeKeys == ["testKey4"])
+
+		// Combines with other operators and sets like any condition.
+		let gasCondition = DBCondition(set: 1, objectKey: "payee", conditionOperator: .contains, value: "Gas")
+		let combinedKeys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [samsCondition, gasCondition]))
+		#expect(Set(combinedKeys) == ["testKey1", "testKey2", "testKey3"])
+
+		await removeDB(db)
+	}
+
+	@Test("almostEqual survives auto-close and reopen")
+	func almostEqualAfterReopen() async throws {
+		let db = dbForTesting()
+
+		let table: DBTable = "table79"
+		await db.setValueInTable(table, for: "testKey1", to: "{\"payee\":\"Sam's Club\"}", autoDeleteAfter: nil)
+		await db.close()
+
+		let condition = DBCondition(set: 0, objectKey: "payee", conditionOperator: .almostEqual, value: "sams club")
+		let keys = try #require(await db.keysInTable(table, sortOrder: nil, conditions: [condition]))
+		#expect(keys == ["testKey1"], "agile_alnum must be registered on the reopened connection")
+
+		await removeDB(db)
+	}
+
+	@Test("alphanumericKey normalization")
+	func alphanumericKeyNormalization() {
+		#expect(AgileDB.alphanumericKey("Sam's Club") == "samsclub")
+		#expect(AgileDB.alphanumericKey("  SAMS-CLUB #42 ") == "samsclub42")
+		#expect(AgileDB.alphanumericKey("Crème Brûlée") == "cremebrulee")
+		#expect(AgileDB.alphanumericKey("!!!") == "")
+		#expect("Sams Club".almostEquals("sam's club"))
+		#expect(!"Sams Club".almostEquals("Sam's Club Gas"))
+	}
 }

@@ -112,6 +112,49 @@ final class PredicateMacroTests: XCTestCase {
 		)
 	}
 
+	func testAlmostEqualsOnProperty() {
+		assertMacroExpansion(
+			"""
+			#Predicate<Payee> { $0.name.almostEquals("Sams Club") }
+			""",
+			expandedSource: """
+			DBPredicate<Payee>(conditions: [
+			    DBCondition(set: 0, objectKey: "name", conditionOperator: .almostEqual, value: "Sams Club" as any Sendable)
+			    ])
+			""",
+			macros: macros
+		)
+	}
+
+	func testAlmostEqualsWithPropertyAsArgument() {
+		assertMacroExpansion(
+			"""
+			#Predicate<Payee> { searchText.almostEquals($0.name) }
+			""",
+			expandedSource: """
+			DBPredicate<Payee>(conditions: [
+			    DBCondition(set: 0, objectKey: "name", conditionOperator: .almostEqual, value: searchText as any Sendable)
+			    ])
+			""",
+			macros: macros
+		)
+	}
+
+	func testAlmostEqualsCombinesWithOtherConditions() {
+		assertMacroExpansion(
+			"""
+			#Predicate<Payee> { $0.name.almostEquals("Sams Club") || $0.name.contains("Costco") }
+			""",
+			expandedSource: """
+			DBPredicate<Payee>(conditions: [
+			    DBCondition(set: 0, objectKey: "name", conditionOperator: .almostEqual, value: "Sams Club" as any Sendable),
+			    DBCondition(set: 1, objectKey: "name", conditionOperator: .contains, value: "Costco" as any Sendable)
+			    ])
+			""",
+			macros: macros
+		)
+	}
+
 	func testNestedPropertyPath() {
 		assertMacroExpansion(
 			"""

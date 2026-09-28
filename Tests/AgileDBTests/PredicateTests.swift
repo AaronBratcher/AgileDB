@@ -138,4 +138,29 @@ struct PredicateTests {
 
 		await removeDB(db)
 	}
+
+	@Test("almostEquals matches ignoring punctuation and case")
+	func testAlmostEqualsMatchesFuzzily() async throws {
+		let db = dbForTesting()
+
+		let apostrophe = PredicateAccount()
+		apostrophe.name = "Sam's Club"
+		await apostrophe.save(to: db)
+
+		let shouted = PredicateAccount()
+		shouted.name = "SAMS CLUB"
+		await shouted.save(to: db)
+
+		let other = PredicateAccount()
+		other.name = "Costco"
+		await other.save(to: db)
+
+		let searchText = "Sams Club"
+		let predicate = #Predicate<PredicateAccount> { $0.name.almostEquals(searchText) }
+		let keys = try await db.keysInTable(PredicateAccount.table, conditions: predicate.conditions)
+
+		#expect(Set(keys) == Set([apostrophe.key, shouted.key]))
+
+		await removeDB(db)
+	}
 }
