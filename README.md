@@ -664,13 +664,12 @@ public func processSyncFileAtURL(_ localURL: URL!, syncProgress: syncProgressUpd
 ```    
     
 # Revision History
-### 8.7 ###
+### 8.6 ###
+- New `.almostEqual` (`~=`) condition operator for fuzzy string matching on letters and digits only, ignoring case, diacritics, punctuation and whitespace ("Sams Club" finds "Sam's Club"). Available in `#Predicate` as `$0.property.almostEquals(value)`, and in Swift as `String.almostEquals(_:)` / `AgileDB.alphanumericKey(_:)`.
+
 - New `.almostContains` (`~...`) condition operator: fuzzy substring matching on letters and digits only ("sams" finds "Sam's Club"). Available in `#Predicate` as `$0.property.almostContains(value)`, and in Swift as `String.almostContains(_:)`.
 - Conditions and sort orders on a property declared with `setIndexesForTable` now query its generated column instead of `json_extract(value, …)`, so SQLite actually uses the index. Previously every condition was a full table scan regardless of declared indexes.
 - `#Predicate` compile errors now show their message instead of the internal error type.
-
-### 8.6 ###
-- New `.almostEqual` (`~=`) condition operator for fuzzy string matching on letters and digits only, ignoring case, diacritics, punctuation and whitespace ("Sams Club" finds "Sam's Club"). Available in `#Predicate` as `$0.property.almostEquals(value)`, and in Swift as `String.almostEquals(_:)` / `AgileDB.alphanumericKey(_:)`.
 
 ### 8.5 ###
 - DBObjects now support Data and [Data] types.
